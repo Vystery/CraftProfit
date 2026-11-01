@@ -88,20 +88,6 @@ The older `/cp` still works for every command.
 /cf reset confirm    wipe all scan data and settings
 ```
 
-## Saved data on the WoW Forever beta
-
-Older beta builds (before 1.60.1.70338) did not load addon saved files. Current builds do, and CraftProfit
-saves normally. It keeps two extra safety nets in case a future build breaks this again:
-
-- it keeps a compact copy of its data in the client's console settings file
-  (`WTF\SavedVariables\Blizzard_Console.lua`, under `AddOnVault.CraftProfit`), used only if the normal
-  saved file does not load;
-- it shares the latest prices between your characters through account-wide settings, so a scan on one
-  character is visible on the others.
-
-If you see "no saved data yet" after logging in, run a scan; `/cf status` shows what was loaded. Only
-CraftProfit's own entry in that file is read or written.
-
 ## Price sources
 
 | Source | Where prices come from |
@@ -113,8 +99,8 @@ CraftProfit's own entry in that file is read or written.
 
 ## Known limits
 
-- WoW Forever is in beta and its API can change between builds. If something breaks after a patch, please
-  report it with the output of `/cf status`.
+- WoW Forever's API can change with patches. If something breaks after a patch, please report it with the
+  output of `/cf status`.
 - Auctionator and TSM prices (including custom TSM price strings) have not been tested in game yet; the
   built-in scan is the tested source. If they look wrong, use `/cf source craftprofit` and report it.
 - Sold per day counts every listing that disappeared between two scans, so expired and cancelled auctions
