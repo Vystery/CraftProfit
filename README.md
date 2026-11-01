@@ -128,4 +128,4 @@ Discord: https://discord.gg/hbJXz7qqpJ (#addon-help, #bug-reports, #suggestions)
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Made by Vystery.
+All rights reserved, see [LICENSE](LICENSE). Made by Vystery.
