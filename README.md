@@ -7,7 +7,7 @@ worth learning.
 
 ## Install
 
-1. Download the release zip and extract it into `World of Warcraft\_classic_beta_\Interface\AddOns\`, so you
+1. Download the release zip and extract it into `World of Warcraft\_forever_\Interface\AddOns\`, so you
    end up with `...\Interface\AddOns\CraftProfit\CraftProfit.toc`.
 2. Start the game (or type `/reload` if it is already running) and make sure CraftProfit is enabled in the
    AddOns list on the character select screen.
