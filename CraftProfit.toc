@@ -1,0 +1,23 @@
+## Interface: 16001
+## Title: CraftProfit
+## Notes: Craft cost and profit for every recipe, directly in the profession window. Price sources: own AH scan, Auctionator, TSM.
+## Author: Vystery
+## X-License: MIT
+## Version: 0.5.0
+## SavedVariables: CraftProfitDB
+## SavedVariablesPerCharacter: CraftProfitCharDB
+## OptionalDeps: Auctionator, TradeSkillMaster
+## IconTexture: Interface\Icons\INV_Misc_Coin_01
+## X-Category: Professions
+
+Core.lua
+VendorPrices.lua
+PriceSources.lua
+Scanner.lua
+Share.lua
+Tooltip.lua
+Calculator.lua
+ProfessionUI.lua
+Trainer.lua
+Options.lua
+Demo.lua
