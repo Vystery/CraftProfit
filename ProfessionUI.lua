@@ -4,6 +4,7 @@
 --   * unit price / line total under every reagent
 --   * "Profit - Auction House" (or "- Vendor", per the netBasis setting) panel in the recipe details
 --   * optional sort-by-profit within categories (Filter dropdown, panel checkbox, /cf sort); see "Sort by profit"
+--   * optional profitable-only filter (Filter dropdown, /cf profit); see "Profitable only"
 
 local _, CP = ...
 local UI = {}
@@ -779,6 +780,94 @@ function UI:SetSortByProfit(enabled)
 end
 
 ---------------------------------------------------------------------------
+-- Profitable only
+---------------------------------------------------------------------------
+
+-- Removes recipe rows whose current net is negative from the tree Blizzard just built.
+-- Recipes with no price (nil net) stay; only known losses are dropped. Empty categories are
+-- culled afterwards so headers without remaining crafts do not linger. Turning the filter off
+-- (or changing Blizzard's own filters) rebuilds the list through Init, which restores everything.
+
+local rebuildingList = false
+
+function UI:RebuildList()
+	if rebuildingList then return end
+	local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
+	if not page or not page.professionInfo or not ProfessionsFrame:IsShown() then return end
+	if type(page.Init) ~= "function" then return end
+	rebuildingList = true
+	local ok, err = pcall(page.Init, page, page.professionInfo)
+	rebuildingList = false
+	if not ok then CP:Debug("list rebuild failed: %s", tostring(err)) end
+end
+
+local function CategoryHasContent(node)
+	for _, child in ipairs(node:GetNodes() or {}) do
+		local d = NodeData(child)
+		if d and d.recipeInfo then return true end
+		if d and d.categoryInfo and CategoryHasContent(child) then return true end
+	end
+	return false
+end
+
+-- Drops negative-profit recipes (and then empty categories) from a recipe list data provider.
+function UI:ApplyFilter(dataProvider)
+	if not dataProvider or not CP.settings.profitableOnly then return false end
+	if type(dataProvider.EnumerateEntireRange) ~= "function" or type(dataProvider.Remove) ~= "function" then
+		return false
+	end
+	local changed = false
+	local ok, err = pcall(function()
+		local drop = {}
+		for _, node in dataProvider:EnumerateEntireRange() do
+			local d = NodeData(node)
+			local info = d and d.recipeInfo
+			if info and info.recipeID and not d.categoryInfo then
+				local net = UI:GetNet(info.recipeID)
+				if net ~= nil and net < 0 then
+					table.insert(drop, node)
+				end
+			end
+		end
+		for _, node in ipairs(drop) do
+			dataProvider:Remove(node)
+			changed = true
+		end
+		-- Cull categories that no longer hold a recipe (or a non-empty subcategory).
+		local again = true
+		while again do
+			again = false
+			local empty = {}
+			for _, node in dataProvider:EnumerateEntireRange() do
+				local d = NodeData(node)
+				if d and d.categoryInfo and not CategoryHasContent(node) then
+					table.insert(empty, node)
+				end
+			end
+			for _, node in ipairs(empty) do
+				dataProvider:Remove(node)
+				changed = true
+				again = true
+			end
+		end
+	end)
+	if not ok then CP:Debug("filter failed: %s", tostring(err)) end
+	if changed and type(dataProvider.Invalidate) == "function" then
+		local ok2, err2 = pcall(dataProvider.Invalidate, dataProvider)
+		if not ok2 then CP:Debug("filter refresh failed: %s", tostring(err2)) end
+	end
+	return changed
+end
+
+function UI:SetProfitableOnly(enabled)
+	CP.settings.profitableOnly = enabled and true or false
+	CP.touched.profitableOnly = true
+	-- Rebuild so turning it off restores removed rows (and turning it on starts from a full list).
+	self:RebuildList()
+	CP:Fire("FILTER_CHANGED", CP.settings.profitableOnly)
+end
+
+---------------------------------------------------------------------------
 -- Refresh
 ---------------------------------------------------------------------------
 
@@ -798,9 +887,11 @@ function UI:RefreshAll()
 				if node then UI:UpdateRow(frame, node) end
 			end
 		end)
-		-- prices changed: re-sort with the new numbers (the invalidate re-initialises the rows)
-		if CP.settings.sortByProfit and type(list.ScrollBox.GetDataProvider) == "function" then
-			self:ApplySort(list.ScrollBox:GetDataProvider())
+		-- prices changed: drop newly unprofitable rows, then re-sort with the new numbers
+		if type(list.ScrollBox.GetDataProvider) == "function" then
+			local dataProvider = list.ScrollBox:GetDataProvider()
+			if CP.settings.profitableOnly then self:ApplyFilter(dataProvider) end
+			if CP.settings.sortByProfit then self:ApplySort(dataProvider) end
 		end
 	end
 
@@ -850,6 +941,7 @@ function UI:Setup()
 	hooksecurefunc(page.SchematicForm, "Init", OnFormInit)
 
 	hooksecurefunc(page.RecipeList.ScrollBox, "SetDataProvider", function(_, dataProvider)
+		UI:ApplyFilter(dataProvider)
 		UI:ApplySort(dataProvider)
 	end)
 
@@ -860,6 +952,9 @@ function UI:Setup()
 			rootDescription:CreateCheckbox("Sort by profit",
 				function() return CP.settings.sortByProfit end,
 				function() UI:SetSortByProfit(not CP.settings.sortByProfit) end)
+			rootDescription:CreateCheckbox("Profitable only",
+				function() return CP.settings.profitableOnly end,
+				function() UI:SetProfitableOnly(not CP.settings.profitableOnly) end)
 			rootDescription:CreateCheckbox("Vendor net",
 				function() return CP.settings.netBasis == "vendor" end,
 				function() CP:SetSetting("netBasis", CP.settings.netBasis == "vendor" and "ah" or "vendor") end)

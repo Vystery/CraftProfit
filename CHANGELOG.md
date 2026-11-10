@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Profitable only**: a Filter menu / options / `/cf profit` toggle that hides recipes whose craft
+  profit is negative. Recipes with missing prices stay visible; empty categories are culled from the list.
+
 ## 0.5.0
 
 - **Depth value**: after a full scan, CraftProfit reads the listings of your recipes' reagents and outputs

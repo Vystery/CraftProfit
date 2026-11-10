@@ -24,6 +24,7 @@ CP.defaults = {
 	showReagentPrices = true,
 	showPanel = true,
 	sortByProfit = false,
+	profitableOnly = false,       -- hide recipes with a negative craft profit in the profession list
 	craftIntermediates = false,   -- price reagents you can craft (learned recipe) at their own craft cost
 	craftOnlyWhenCheaper = true,  -- ...but only when that beats the buy price
 	scanButton = true,
@@ -918,9 +919,10 @@ local function PrintStatus()
 	if CP.Share then CP:Print(CP.Share:Status()) end
 	local crafts = 0
 	for _ in pairs(CP.crafts or {}) do crafts = crafts + 1 end
-	CP:Print("AH cut %d%%, sale basis %s, net shown %s, sort by profit %s, craft intermediates %s (%d craftable items known), trainer tags %s.",
+	CP:Print("AH cut %d%%, sale basis %s, net shown %s, sort by profit %s, profitable only %s, craft intermediates %s (%d craftable items known), trainer tags %s.",
 		math.floor(CP.settings.ahCut * 100 + 0.5), CP.settings.saleBasis, CP.settings.netBasis or "ah",
-		CP.settings.sortByProfit and "on" or "off", CP.settings.craftIntermediates and "on" or "off", crafts,
+		CP.settings.sortByProfit and "on" or "off", CP.settings.profitableOnly and "on" or "off",
+		CP.settings.craftIntermediates and "on" or "off", crafts,
 		CP.settings.trainerTags and "on" or "off")
 end
 
@@ -931,6 +933,7 @@ local function PrintHelp()
 	CP:Print("  /cf depth [on|off] - read your reagents' and outputs' listings now (on/off: after every full scan)")
 	CP:Print("  /cf source auto|craftprofit|auctionator|tsm")
 	CP:Print("  /cf sort - toggle sort recipes by profit")
+	CP:Print("  /cf profit - toggle listing only profitable crafts")
 	CP:Print("  /cf tag profit|margin|both - what the recipe rows show")
 	CP:Print("  /cf net ah|vendor - show profit for selling on the AH or to a vendor")
 	CP:Print("  /cf trainer - toggle profit tags in the profession trainer window (/cf trainer check lists what each service matched)")
@@ -977,6 +980,9 @@ local function HandleSlash(input)
 	elseif cmd == "sort" then
 		CP.UI:SetSortByProfit(not CP.settings.sortByProfit)
 		CP:Print("sort by profit %s", CP.settings.sortByProfit and "on" or "off")
+	elseif cmd == "profit" then
+		CP.UI:SetProfitableOnly(not CP.settings.profitableOnly)
+		CP:Print("profitable only %s", CP.settings.profitableOnly and "on" or "off")
 	elseif cmd == "tag" then
 		local mode = rest:lower()
 		if mode == "profit" or mode == "margin" or mode == "both" then
