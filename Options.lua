@@ -96,6 +96,10 @@ function Options:Setup()
 			function(value) CP.UI:SetSortByProfit(value) end)
 		Settings.CreateCheckbox(category, sort, "Within each category, list the most profitable recipes first.")
 
+		local profitable = Proxy(category, "profitableOnly", Settings.VarType.Boolean, "Only show profitable crafts", CP.defaults.profitableOnly,
+			function(value) CP.UI:SetProfitableOnly(value) end)
+		Settings.CreateCheckbox(category, profitable, "Hide recipes whose craft profit is negative (missing prices stay visible).")
+
 		local craft = Proxy(category, "craftIntermediates", Settings.VarType.Boolean, "Craft reagents I can make", CP.defaults.craftIntermediates)
 		Settings.CreateCheckbox(category, craft, "Price reagents you have a learned recipe for (e.g. Bolt of Woolen Cloth) at their own craft cost instead of the auction price. Open each profession once per session so its recipes are known.")
 
