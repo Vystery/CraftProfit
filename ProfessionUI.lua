@@ -346,7 +346,7 @@ end
 
 -- Puts panel `p` (a child of `form`) below everything in the reagent area, at most `designHeight` tall.
 -- Returns false when the form is not laid out yet (the caller then uses its own fallback). Shared with
--- CraftShuffle as UI.PlaceBelowContent.
+-- companion addons as UI.PlaceBelowContent.
 local function PlaceBelowContent(p, form, designHeight)
 	local lowest, fr = ContentBottom(p, form)
 	if lowest then
@@ -375,7 +375,7 @@ UI.PlaceBelowContent = PlaceBelowContent
 
 -- Re-check the placement for a short while after a recipe is shown: other addons place their rows after
 -- the form's Init (ForeverRecipes on the next frame, and again on its own refreshes). `anchor(p, form)` is
--- the panel's own placement function. Shared with CraftShuffle as UI.SettlePanel.
+-- the panel's own placement function. Shared with companion addons as UI.SettlePanel.
 local function SettlePanel(p, form, anchor)
 	p.cpSettleUntil = GetTime() + SETTLE_TIME
 	p.cpSettleAnchor = anchor

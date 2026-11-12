@@ -1,15 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - **Profitable only**: a Filter menu / options / `/cf profit` toggle that hides recipes whose craft
   profit is negative, zero or unknown (a missing price). Empty categories are removed from the list.
 - **Shopping list**: **Shop** in the profit panel adds the selected recipe, times the craft count next to
   Create (right-click takes it off). At the Auction House a panel beside the window lists every reagent you
   still need after what's in your bags and bank, with the cost at the scanned prices. What you buy at the AH
-  counts right away as "in the mail" until you collect it. **Search all** puts
-  every missing reagent into the Auction House results in one search; click an item to search just that one. Vendor reagents are listed but not searched. The list is shared by all your
-  characters. `/cf shop` and `/cf shop clear`.
+  counts right away as "in the mail" until you collect it. **Search all** puts every missing reagent into the
+  Auction House results in one search; click an item to search just that one. Vendor reagents are listed but
+  not searched. The list is shared by all your characters. `/cf shop` and `/cf shop clear`.
 - Hold **Shift** over a stack in your bags and the tooltip shows every price for the whole stack (20 Light
   Leather: the auction price for all 20). Without Shift it shows the price per item and a "Stack of 20" hint.
 - Item tooltips no longer show the CraftProfit block on items that can't go to the Auction House: quest
@@ -17,9 +17,6 @@
 - The profit panel no longer overlaps other addons in the recipe details. It now goes below whatever is
   actually under the reagents (ForeverRecipes' Difficulty and Source rows, Auctionator's reagent total) and
   follows ForeverRecipes' two-per-row reagent layout. When space is tight it shrinks to the Net profit row.
-
-## 0.5.1
-
 - Fixed "shared price cache could not be written (push FAILED ...)" after every scan on some clients. Prices
   reach your other characters through the normal saved data again, so CraftProfit no longer writes its old
   extra copy into the game's console settings (CVars). Nothing is lost when updating: whatever that old copy

@@ -310,7 +310,7 @@ end)
 ---------------------------------------------------------------------------
 -- Auction House window
 ---------------------------------------------------------------------------
--- Built like the AH itself (and CraftShuffle's scan window): a portrait frame docked to the AH's right
+-- Built like the AH itself: a portrait frame docked to the AH's right
 -- edge, the recipes next to the portrait, then the AH's inset with its background art, column headers
 -- and row highlight, and the buttons at the bottom.
 
