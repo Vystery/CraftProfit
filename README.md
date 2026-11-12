@@ -41,8 +41,13 @@ can skip the scan. Pick a specific source in the options or with `/cf source`.
 - **Craft reagents I can make**: reagents you have a recipe for (Bolt of Woolen Cloth, for example) are
   priced at their own craft cost when that is cheaper than buying. This also works through chains, for
   example ore → bar → tube → finished item. Open each profession once so its recipes are known.
+- **Shopping list**: click **Shop** in the profit panel to add the recipe (times the craft count next to
+  Create; right-click takes it off). At the Auction House a panel beside it lists every reagent the list needs,
+  how many you already have (bags, bank, and AH purchases still in the mail), and what the rest costs. **Search all** shows every reagent you
+  still need in the Auction House results in one search, cheapest first; click a row to search just that item. `/cf shop` prints the list, `/cf shop clear` empties it.
 - **Item tooltips**: the auction price CraftProfit uses for an item, where it comes from and how old it is.
   Items read by the depth scan also show their **depth value** (see below). Turn it off with `/cf tooltip`.
+  Over a stack in your bags, hold **Shift** to see every price as the total for the whole stack.
 - **Depth value**: the lowest buyout is easy to fake. One listing at 2s in front of 500 at 50s makes it 2s.
   The depth value is the average price of the cheapest 20% of what is listed (at most 1,000 units, at least
   5), so a single cheap listing barely moves it. It comes from the depth scan after each full scan, which reads
@@ -84,7 +89,8 @@ The older `/cp` still works for every command.
 /cf cut <percent>    Auction House cut used for net profit
 /cf basis min|market sale price from your scans: lowest buyout, or market (depth value, else median of recent scans)
 /cf tooltip          toggle the tooltip block
-/cf share [pull]     push (or pull) the price cache shared by your characters
+/cf shop [clear]     show (or empty) the AH shopping list
+/cf share [import]   state of the old cross-character cache (import: merge it again)
 /cf reset confirm    wipe all scan data and settings
 ```
 

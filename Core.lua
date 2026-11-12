@@ -401,7 +401,6 @@ local function StartSavedVariableWatch()
 end
 CP:RegisterEvent("PLAYER_ENTERING_WORLD", function() CP:CheckSavedVariables("entering world") end)
 CP:RegisterEvent("PLAYER_LOGOUT", function()
-	if CP.Share then CP.Share:OnLogout() end -- merge the scans of other characters in and push ours before the file is packed
 	CP:CheckSavedVariables("logout")
 end)
 CP:RegisterEvent("ADDON_LOADED", function(_, name) if name ~= ADDON_NAME then CP:CheckSavedVariables("addon " .. tostring(name)) end end)
@@ -469,7 +468,8 @@ function CP:PackDB(db)
 	db = db or self.db
 	local now = time()
 	local keep = self.touchedItems
-	local out = { packed = PACK_VERSION, packedAt = now, version = db.version, settings = db.settings, realms = {}, learned = {} }
+	local out = { packed = PACK_VERSION, packedAt = now, version = db.version, settings = db.settings, realms = {}, learned = {},
+		shareImported = db.shareImported, shopping = db.shopping, shoppingMail = db.shoppingMail }
 	local v = {}
 	for id, price in pairs(db.vendor or {}) do v[#v + 1] = Enc(id) .. "." .. Enc(price) end
 	out.vendor = Chunks(v)
@@ -551,7 +551,8 @@ end
 function CP:UnpackDB(p)
 	if not self:IsPacked(p) then return p end
 	local base = p.packedAt or time()
-	local db = { version = p.version, settings = p.settings or {}, vendor = {}, learned = {}, recipeCache = {}, realms = {} }
+	local db = { version = p.version, settings = p.settings or {}, vendor = {}, learned = {}, recipeCache = {}, realms = {},
+		shareImported = p.shareImported, shopping = p.shopping, shoppingMail = p.shoppingMail }
 	Each(p.vendor, function(e)
 		local id, price = e:match("^(%w+)%.(%w+)$")
 		if id then db.vendor[Dec(id)] = Dec(price) end
@@ -732,6 +733,19 @@ local function AdoptCraftProfitDB(loaded, provisional, reason)
 		end
 	end
 	loaded.version = loaded.version or provisional.version
+	loaded.shareImported = loaded.shareImported or provisional.shareImported -- old CVar cache already merged (Share.lua)
+	-- shopping list (Shopping.lua): recipes added this session before the saved copy arrived are kept
+	loaded.shopping = loaded.shopping or {}
+	for recipeID, e in pairs(provisional.shopping or {}) do
+		if not loaded.shopping[recipeID] then loaded.shopping[recipeID] = e end
+	end
+	loaded.shoppingMail = loaded.shoppingMail or {}
+	for char, items in pairs(provisional.shoppingMail or {}) do
+		loaded.shoppingMail[char] = loaded.shoppingMail[char] or {}
+		for itemID, n in pairs(items) do
+			loaded.shoppingMail[char][itemID] = math.max(n, loaded.shoppingMail[char][itemID] or 0)
+		end
+	end
 	CP.db = loaded
 	CP.settings = loaded.settings
 	ApplyDefaults(CP.settings, CP.defaults)
@@ -939,7 +953,8 @@ local function PrintHelp()
 	CP:Print("  /cf basis min|market - sale price basis for own scans (market = depth value)")
 	CP:Print("  /cf options - open the settings panel")
 	CP:Print("  /cf tooltip - toggle the CraftProfit block in item tooltips")
-	CP:Print("  /cf share - push the price cache shared across your characters and show its state")
+	CP:Print("  /cf shop [clear] - show (or empty) the AH shopping list; add recipes with Shop in the profit panel")
+	CP:Print("  /cf share [import] - state of the old cross-character cache (import: merge what it still holds again)")
 	CP:Print("  /cf debug - toggle debug output")
 	CP:Print("  /cf reset confirm - wipe scan data and settings")
 end
@@ -1028,8 +1043,22 @@ local function HandleSlash(input)
 		CP.Options:Open()
 	elseif cmd == "share" then
 		if CP.Share then
-			if rest:lower() == "pull" then CP.Share:Pull("manual") else CP.Share:Push("manual") end
+			local sub = rest:lower()
+			if sub == "import" or sub == "pull" then CP.Share:Import("manual", true) end
 			CP:Print(CP.Share:Status())
+		end
+	elseif cmd == "shop" and CP.Shopping then
+		local shop = CP.Shopping
+		if rest:lower() == "clear" then
+			shop:Clear()
+			CP:Print("Shopping list cleared.")
+		elseif shop:IsEmpty() then
+			CP:Print("The shopping list is empty. Select a recipe and click Shop in the profit panel.")
+		else
+			for _, r in ipairs(shop:Recipes()) do CP:Print("  %dx %s", r.n, r.name) end
+			for _, it in ipairs(shop:Items()) do
+				CP:Print("    %s  %d / %d%s", it.name, it.have + it.mail, it.need, it.missing == 0 and "  done" or (it.vendor and "  (vendor)" or ""))
+			end
 		end
 	elseif cmd == "tooltip" then
 		CP:SetSetting("tooltip", not CP.settings.tooltip)
@@ -1045,7 +1074,7 @@ local function HandleSlash(input)
 			ApplyDefaults(CP.db.settings, CP.defaults)
 			wipe(CP.touched)
 			wipe(CP.touchedItems)
-			-- the account-wide cache would otherwise merge the old prices straight back at the next pull
+			-- empty the old CVar cache too, so nothing of the wiped data is left behind
 			if CP.Share and CP.Share.Clear then CP.Share:Clear() end
 			if CP.Calc then CP.Calc:Invalidate() end
 			CP:Fire("PRICES_UPDATED", "reset")

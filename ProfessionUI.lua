@@ -276,7 +276,128 @@ local function PanelRightInset(form)
 	return PANEL_INSET
 end
 
+-- Other addons put their own rows under the reagents (Auctionator's reagent total, ForeverRecipes'
+-- Difficulty block and Source tabs) and ForeverRecipes lays the reagents out two per row. So once the form
+-- is laid out, the panel goes below whatever is actually there instead of assuming Blizzard's layout.
+local PANEL_MIN_HEIGHT = 62     -- title + net row: the smallest panel that still says something
+local PANEL_FLOOR = 8           -- how far the smallest panel may dip into the Track Recipe band
+local SETTLE_TIME = 0.5         -- neighbours (ForeverRecipes) place their rows a frame or more after us
+
+-- Screen-space rect (scale-normalised), or nil when the region is not laid out yet.
+local function Rect(f)
+	if not (f and type(f.GetTop) == "function" and type(f.GetBottom) == "function") then return nil end
+	local top, bottom = f:GetTop(), f:GetBottom()
+	if type(top) ~= "number" or type(bottom) ~= "number" then return nil end
+	local left = type(f.GetLeft) == "function" and f:GetLeft() or nil
+	local right = type(f.GetRight) == "function" and f:GetRight() or nil
+	local s = type(f.GetEffectiveScale) == "function" and f:GetEffectiveScale() or 1
+	return { top = top * s, bottom = bottom * s, left = left and left * s, right = right and right * s, scale = s }
+end
+
+local function Visible(f)
+	if type(f.IsShown) == "function" and not f:IsShown() then return false end
+	if type(f.IsVisible) == "function" and not f:IsVisible() then return false end
+	if type(f.GetAlpha) == "function" and (f:GetAlpha() or 1) <= 0.01 then return false end
+	return true
+end
+
+-- Lowest screen y of everything in the reagent area and below it (reagent slots, Blizzard's optional
+-- reagents, and any other addon's frame on the form or its page that sits inside the form's width), or nil
+-- when nothing can be measured yet. Returns the form's rect too.
+local function ContentBottom(p, form)
+	local fr = Rect(form)
+	if not (fr and fr.left and fr.right) then return nil end
+	local lowest, reagentTop
+	for _, slot in ipairs(BasicSlots(form)) do
+		local r = Visible(slot) and Rect(slot)
+		if r then
+			if not lowest or r.bottom < lowest then lowest = r.bottom end
+			if not reagentTop or r.top > reagentTop then reagentTop = r.top end
+		end
+	end
+	if not lowest then return nil end
+	local optional = form.OptionalReagents
+	local r = optional and Visible(optional) and Rect(optional)
+	if r and r.bottom < lowest then lowest = r.bottom end
+
+	local formHeight = fr.top - fr.bottom
+	local band = fr.bottom + PANEL_BOTTOM * fr.scale -- the Track Recipe row: not content
+	local skip = { [p] = true, [form] = true, [form.Reagents or p] = true, [optional or p] = true }
+	local function scan(parent)
+		if not (parent and type(parent.GetChildren) == "function") then return end
+		for _, child in ipairs({ parent:GetChildren() }) do
+			if not skip[child] and Visible(child) then
+				local c = Rect(child)
+				if c and c.left and c.right and c.top - c.bottom > 1
+					and c.top - c.bottom <= formHeight * 0.6           -- not a backdrop / whole-form container
+					and c.left >= fr.left - 4 and c.right <= fr.right + 4 -- inside the recipe pane
+					and c.top <= reagentTop + 2 and c.top > band       -- in the space the panel would use
+					and c.bottom < lowest then
+					lowest = c.bottom
+				end
+			end
+		end
+	end
+	scan(form)
+	scan(type(form.GetParent) == "function" and form:GetParent() or nil)
+	return lowest, fr
+end
+
+-- Puts panel `p` (a child of `form`) below everything in the reagent area, at most `designHeight` tall.
+-- Returns false when the form is not laid out yet (the caller then uses its own fallback). Shared with
+-- CraftShuffle as UI.PlaceBelowContent.
+local function PlaceBelowContent(p, form, designHeight)
+	local lowest, fr = ContentBottom(p, form)
+	if lowest then
+		local s = fr.scale
+		local offset = (fr.top - lowest) / s + PANEL_GAP
+		local room = (fr.top - fr.bottom) / s - offset - PANEL_BOTTOM
+		local height = math.min(designHeight or PANEL_HEIGHT, room)
+		if height < PANEL_MIN_HEIGHT then
+			height = math.min(PANEL_MIN_HEIGHT, room + PANEL_BOTTOM - PANEL_FLOOR)
+		end
+		height = math.floor(height + 0.5)
+		if p.cpGeometry and math.abs(p.cpGeometry.offset - offset) < 0.5 and p.cpGeometry.height == height then
+			return true -- already there; avoid re-anchoring every frame while settling
+		end
+		p.cpGeometry = { offset = offset, height = height }
+		p:ClearAllPoints()
+		p:SetPoint("TOPLEFT", form, "TOPLEFT", PANEL_INSET, -offset)
+		p:SetPoint("RIGHT", form, "RIGHT", -PanelRightInset(form), 0)
+		p:SetHeight(height)
+		return true
+	end
+	p.cpGeometry = nil
+	return false
+end
+UI.PlaceBelowContent = PlaceBelowContent
+
+-- Re-check the placement for a short while after a recipe is shown: other addons place their rows after
+-- the form's Init (ForeverRecipes on the next frame, and again on its own refreshes). `anchor(p, form)` is
+-- the panel's own placement function. Shared with CraftShuffle as UI.SettlePanel.
+local function SettlePanel(p, form, anchor)
+	p.cpSettleUntil = GetTime() + SETTLE_TIME
+	p.cpSettleAnchor = anchor
+	if p.cpSettling then return end
+	p.cpSettling = true
+	p:SetScript("OnUpdate", function(self)
+		if not self:IsShown() or GetTime() > (self.cpSettleUntil or 0) then
+			self.cpSettling = false
+			self:SetScript("OnUpdate", nil)
+			return
+		end
+		self.cpSettleAnchor(self, form)
+	end)
+end
+UI.SettlePanel = SettlePanel
+
 local function AnchorPanel(p, form)
+	if PlaceBelowContent(p, form, PANEL_HEIGHT) then
+		p.cpStretch = false
+		p.cpAnchor = nil
+		return
+	end
+
 	local slots = BasicSlots(form)
 	local anchor
 	if #slots > 0 then
@@ -371,7 +492,10 @@ local function CreatePanel(form)
 	-- final form width, so on first open we measure the retail default. Re-anchor whenever the form resizes.
 	if type(form.HookScript) == "function" then
 		form:HookScript("OnSizeChanged", function(f)
-			if f.cpPanel and f.cpPanel:IsShown() then AnchorPanel(f.cpPanel, f) end
+			if f.cpPanel and f.cpPanel:IsShown() then
+				f.cpPanel.cpGeometry = nil
+				AnchorPanel(f.cpPanel, f)
+			end
 		end)
 	end
 	p:SetScript("OnSizeChanged", function(self) LayoutPanel(self) end)
@@ -393,9 +517,19 @@ local function CreatePanel(form)
 
 	-- Scan age (and the source when it is not our own scan) on the header's right side. Anchored to
 	-- both the title and the right edge so it clips instead of overlapping the title when narrow.
+	-- "Shop": adds this recipe (times Blizzard's craft count) to the AH shopping list (Shopping.lua).
+	p.ShopButton = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+	p.ShopButton:SetSize(44, 18)
+	p.ShopButton:SetPoint("TOPRIGHT", p, "TOPRIGHT", -6, -5)
+	p.ShopButton:SetText("Shop")
+	if p.ShopButton.RegisterForClicks then p.ShopButton:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+	p.ShopButton:SetScript("OnClick", function(self, button) UI:ShopClicked(self, button) end)
+	p.ShopButton:SetScript("OnEnter", function(self) UI:ShopTooltip(self) end)
+	p.ShopButton:SetScript("OnLeave", GameTooltip_Hide)
+
 	p.Age = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	p.Age:SetPoint("LEFT", p.Title, "RIGHT", 8, -1)
-	p.Age:SetPoint("RIGHT", p, "RIGHT", -10, 0)
+	p.Age:SetPoint("RIGHT", p.ShopButton, "LEFT", -6, 0)
 	p.Age:SetJustifyH("RIGHT")
 	if p.Age.SetWordWrap then p.Age:SetWordWrap(false) end
 	if p.Age.SetMaxLines then p.Age:SetMaxLines(1) end
@@ -544,6 +678,51 @@ local function CreatePanel(form)
 	return p
 end
 
+-- How many crafts "Shop" adds: Blizzard's craft-count box under the recipe, at least 1.
+local function CraftCount()
+	local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
+	local box = page and page.CreateMultipleInputBox
+	local n = box and type(box.GetValue) == "function" and tonumber(box:GetValue())
+	if not n or n < 1 then n = 1 end
+	return math.floor(n)
+end
+
+function UI:ShopClicked(button, mouse)
+	local p = button:GetParent()
+	local info = p and p.cpRecipeInfo
+	local shop = CP.Shopping
+	if not (info and info.recipeID and shop) then return end
+	local name = info.name or ("Recipe " .. info.recipeID)
+	if mouse == "RightButton" then
+		if shop:Crafts(info.recipeID) > 0 then
+			shop:Remove(info.recipeID)
+			CP:Print("%s taken off the shopping list.", name)
+		end
+	else
+		local crafts = CraftCount()
+		local total = shop:Add(info.recipeID, crafts, name)
+		CP:Print("Shopping list: %s x%d%s. Open the Auction House to buy the reagents.", name, total,
+			total > crafts and string.format(" (+%d)", crafts) or "")
+	end
+	if type(GameTooltip.IsOwned) == "function" and GameTooltip:IsOwned(button) then self:ShopTooltip(button) end
+end
+
+function UI:ShopTooltip(button)
+	local p = button:GetParent()
+	local info = p and p.cpRecipeInfo
+	GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+	GameTooltip:AddLine("Add to shopping list")
+	local n = CraftCount()
+	GameTooltip:AddLine(string.format("Adds %d craft%s of this recipe. At the Auction House, CraftProfit lists the reagents you still need and searches for them.",
+		n, n == 1 and "" or "s"), 1, 1, 1, true)
+	local have = info and CP.Shopping and CP.Shopping:Crafts(info.recipeID) or 0
+	if have > 0 then
+		GameTooltip:AddLine(string.format("On the list: %d crafts. Right-click to take it off.", have), 1, 0.82, 0, true)
+	end
+	GameTooltip:AddLine("Set the craft count in the box next to Create.", 0.6, 0.6, 0.6, true)
+	GameTooltip:Show()
+end
+
 -- The economics of the recipe shown in the open profession window, or nil.
 function UI:CurrentEco()
 	local frame = ProfessionsFrame
@@ -596,9 +775,12 @@ function UI:UpdateDetail(form, recipeInfo)
 
 	local eco = CP.Calc:Get(recipeInfo.recipeID)
 	p.cpEco = eco
+	p.cpRecipeInfo = recipeInfo
+	p.cpGeometry = nil -- new recipe: measure again
 	AnchorPanel(p, form)
 	LayoutPanel(p)
 	p:Show()
+	SettlePanel(p, form, AnchorPanel)
 
 	local ageText = eco.age and ("scanned " .. CP:FormatAge(eco.age)) or "no price data"
 	local source = CP.Sources:Resolve()
