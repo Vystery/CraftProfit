@@ -4,7 +4,7 @@
 --   * unit price / line total under every reagent
 --   * "Profit - Auction House" (or "- Vendor", per the netBasis setting) panel in the recipe details
 --   * optional sort-by-profit within categories (Filter dropdown, panel checkbox, /cf sort); see "Sort by profit"
---   * optional profitable-only filter (Filter dropdown, /cf profit); see "Profitable only"
+--   * optional profitable-only filter (Filter dropdown, options, /cf profit); see "Profitable only"
 
 local _, CP = ...
 local UI = {}
@@ -783,73 +783,120 @@ end
 -- Profitable only
 ---------------------------------------------------------------------------
 
--- Removes recipe rows whose current net is negative from the tree Blizzard just built.
--- Recipes with no price (nil net) stay; only known losses are dropped. Empty categories are
--- culled afterwards so headers without remaining crafts do not linger. Turning the filter off
--- (or changing Blizzard's own filters) rebuilds the list through Init, which restores everything.
+-- Hides recipes whose net (the one the row tag shows) is a known loss. Same rules as the sort:
+--   * Only recipe rows with a net below zero are hidden. A recipe without a price is never hidden: no
+--     price is not a loss.
+--   * Rows are taken out of the list Blizzard built with the tree's own node:Remove (no invalidation per
+--     node; the provider is invalidated once at the end). A category left without recipes also loses its
+--     padding rows; a category left with nothing loses its header; the unlearned divider goes when no
+--     unlearned category is left. Only what this filter emptied is removed, never anything Blizzard kept.
+--   * The removed nodes are remembered for the list on screen and put back first on every pass (the same node
+--     objects, so children and collapse state survive). So new prices, the AH / vendor basis, an override
+--     and turning the filter off all work on the list that is on screen.
+--   * We never call Blizzard's page or list Init (see "Sort by profit").
 
-local rebuildingList = false
+-- Only the list on screen is remembered: Blizzard builds a new provider for every rebuild and drops the old
+-- one, so state for an older provider is simply forgotten (a weak table would not free it: the nodes point
+-- back at their provider).
+local hiddenFor, hiddenList -- data provider, { { parent, node, index }, ... }
 
-function UI:RebuildList()
-	if rebuildingList then return end
-	local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
-	if not page or not page.professionInfo or not ProfessionsFrame:IsShown() then return end
-	if type(page.Init) ~= "function" then return end
-	rebuildingList = true
-	local ok, err = pcall(page.Init, page, page.professionInfo)
-	rebuildingList = false
-	if not ok then CP:Debug("list rebuild failed: %s", tostring(err)) end
+-- Puts every node the filter took out of `dataProvider` back. Returns the nodes that were hidden (a set) or nil.
+local function RestoreHidden(dataProvider)
+	local hidden = hiddenFor == dataProvider and hiddenList or nil
+	hiddenFor, hiddenList = nil, nil
+	if not hidden then return nil end
+	local was, parents = {}, {}
+	for i = #hidden, 1, -1 do -- reverse order: a header goes back before the rows that were taken out of it
+		local h = hidden[i]
+		local nodes = h.parent:GetNodes()
+		table.insert(nodes, math.min(h.index, #nodes + 1), h.node)
+		parents[h.parent] = true
+		was[h.node] = true
+	end
+	-- The parent's own comparator (Blizzard's, or ours while sorting by profit) puts them back in place.
+	for parent in pairs(parents) do
+		if parent.sortComparator then table.sort(parent:GetNodes(), parent.sortComparator) end
+	end
+	return was
 end
 
-local function CategoryHasContent(node)
+local function IsLoss(data)
+	local net = UI:GetNet(data.recipeInfo.recipeID)
+	return net ~= nil and net < 0
+end
+
+local function Hide(parent, child, hidden)
+	for index, n in ipairs(parent:GetNodes()) do
+		if n == child then
+			parent:Remove(child, true) -- TreeNodeMixin:Remove(node, skipInvalidation)
+			hidden[#hidden + 1] = { parent = parent, node = child, index = index }
+			return
+		end
+	end
+end
+
+-- Hides the losing recipes under `node` (the root or a category), depth first. Returns whether the node still
+-- shows a recipe, and whether this filter removed anything below it.
+local function FilterNode(node, hidden)
+	local drop, paddings = {}, {}
+	local hasRecipe, hasCategory, removed = false, false, false
 	for _, child in ipairs(node:GetNodes() or {}) do
 		local d = NodeData(child)
-		if d and d.recipeInfo then return true end
-		if d and d.categoryInfo and CategoryHasContent(child) then return true end
+		if d and d.categoryInfo then
+			local shows, sub = FilterNode(child, hidden)
+			removed = removed or sub
+			if shows or not sub then hasCategory = true else drop[#drop + 1] = child end
+		elseif d and d.recipeInfo and d.recipeInfo.recipeID then
+			if IsLoss(d) then drop[#drop + 1] = child else hasRecipe = true end
+		elseif d and (d.topPadding or d.bottomPadding) then
+			paddings[#paddings + 1] = child
+		end
 	end
-	return false
+	if #drop > 0 then removed = true end
+	if removed and not hasRecipe then
+		for _, p in ipairs(paddings) do drop[#drop + 1] = p end
+	end
+	for _, child in ipairs(drop) do Hide(node, child, hidden) end
+	return hasRecipe or hasCategory, removed
 end
 
--- Drops negative-profit recipes (and then empty categories) from a recipe list data provider.
+-- Applies (or removes) the filter on a recipe list data provider. Returns true when the visible rows changed.
 function UI:ApplyFilter(dataProvider)
-	if not dataProvider or not CP.settings.profitableOnly then return false end
-	if type(dataProvider.EnumerateEntireRange) ~= "function" or type(dataProvider.Remove) ~= "function" then
-		return false
-	end
+	if not dataProvider then return false end
+	local want = CP.settings.profitableOnly and true or false
+	if not want and hiddenFor ~= dataProvider then return false end
+	if type(dataProvider.GetRootNode) ~= "function" then return false end
 	local changed = false
 	local ok, err = pcall(function()
-		local drop = {}
-		for _, node in dataProvider:EnumerateEntireRange() do
-			local d = NodeData(node)
-			local info = d and d.recipeInfo
-			if info and info.recipeID and not d.categoryInfo then
-				local net = UI:GetNet(info.recipeID)
-				if net ~= nil and net < 0 then
-					table.insert(drop, node)
+		local was = RestoreHidden(dataProvider)
+		local hidden = {}
+		if want then
+			hiddenFor, hiddenList = dataProvider, hidden -- recorded as we go, so an error cannot lose rows
+			local root = dataProvider:GetRootNode()
+			local _, removed = FilterNode(root, hidden)
+			-- the unlearned divider only makes sense above an unlearned category
+			if removed then
+				local divider, unlearned
+				for _, child in ipairs(root:GetNodes() or {}) do
+					local d = NodeData(child)
+					if d and d.isDivider then divider = child end
+					if d and d.categoryInfo and d.categoryInfo.unlearned then unlearned = true end
 				end
+				if divider and not unlearned then Hide(root, divider, hidden) end
 			end
 		end
-		for _, node in ipairs(drop) do
-			dataProvider:Remove(node)
-			changed = true
-		end
-		-- Cull categories that no longer hold a recipe (or a non-empty subcategory).
-		local again = true
-		while again do
-			again = false
-			local empty = {}
-			for _, node in dataProvider:EnumerateEntireRange() do
-				local d = NodeData(node)
-				if d and d.categoryInfo and not CategoryHasContent(node) then
-					table.insert(empty, node)
-				end
-			end
-			for _, node in ipairs(empty) do
-				dataProvider:Remove(node)
-				changed = true
-				again = true
+		if #hidden == 0 then hiddenFor, hiddenList = nil, nil end
+		-- changed unless exactly the same rows were hidden again
+		local same = (was ~= nil) == (#hidden > 0)
+		if same and was then
+			local n = 0
+			for _ in pairs(was) do n = n + 1 end
+			same = n == #hidden
+			for _, h in ipairs(hidden) do
+				if not was[h.node] then same = false break end
 			end
 		end
+		changed = not same
 	end)
 	if not ok then CP:Debug("filter failed: %s", tostring(err)) end
 	if changed and type(dataProvider.Invalidate) == "function" then
@@ -859,11 +906,26 @@ function UI:ApplyFilter(dataProvider)
 	return changed
 end
 
+-- Re-filters the list that is on screen (no rebuild).
+function UI:RefilterList()
+	local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
+	local list = page and page.RecipeList
+	local scrollBox = list and list.ScrollBox
+	if not scrollBox or type(scrollBox.GetDataProvider) ~= "function" then return false end
+	local dataProvider = scrollBox:GetDataProvider()
+	if not self:ApplyFilter(dataProvider) then return false end
+	-- rows that came back may carry the other comparator if the sort was toggled while they were hidden
+	self:ApplySort(dataProvider)
+	if list.NoResultsText and type(dataProvider.IsEmpty) == "function" then
+		list.NoResultsText:SetShown(dataProvider:IsEmpty())
+	end
+	return true
+end
+
 function UI:SetProfitableOnly(enabled)
 	CP.settings.profitableOnly = enabled and true or false
-	CP.touched.profitableOnly = true
-	-- Rebuild so turning it off restores removed rows (and turning it on starts from a full list).
-	self:RebuildList()
+	CP.touched.profitableOnly = true -- keep the choice if a late-loaded database is adopted
+	self:RefilterList()
 	CP:Fire("FILTER_CHANGED", CP.settings.profitableOnly)
 end
 
@@ -887,11 +949,11 @@ function UI:RefreshAll()
 				if node then UI:UpdateRow(frame, node) end
 			end
 		end)
-		-- prices changed: drop newly unprofitable rows, then re-sort with the new numbers
+		-- prices changed: re-filter (hidden rows come back when they no longer lose), then re-sort
 		if type(list.ScrollBox.GetDataProvider) == "function" then
-			local dataProvider = list.ScrollBox:GetDataProvider()
-			if CP.settings.profitableOnly then self:ApplyFilter(dataProvider) end
-			if CP.settings.sortByProfit then self:ApplySort(dataProvider) end
+			if not self:RefilterList() and CP.settings.sortByProfit then
+				self:ApplySort(list.ScrollBox:GetDataProvider())
+			end
 		end
 	end
 
