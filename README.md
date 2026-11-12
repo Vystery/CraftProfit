@@ -38,7 +38,7 @@ can skip the scan. Pick a specific source in the options or with `/cf source`.
   Turn it off with `/cf trainer`.
 - **Sort by profit**: most profitable recipes first within each category. Toggle it in the profession
   window's Filter menu, the panel checkbox, or `/cf sort`.
-- **Profitable only**: hide recipes with a negative craft profit (missing prices stay visible). Toggle it
+- **Profitable only**: show only recipes with a craft profit above zero (losses, break-even and missing prices are hidden). Toggle it
   in the Filter menu, the options, or `/cf profit`.
 - **Craft reagents I can make**: reagents you have a recipe for (Bolt of Woolen Cloth, for example) are
   priced at their own craft cost when that is cheaper than buying. This also works through chains, for

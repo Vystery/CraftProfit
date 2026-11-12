@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Profitable only**: a Filter menu / options / `/cf profit` toggle that hides recipes whose craft
-  profit is negative. Recipes with missing prices stay visible; empty categories are culled from the list.
+  profit is negative, zero or unknown (a missing price). Empty categories are removed from the list.
 - **Shopping list**: **Shop** in the profit panel adds the selected recipe, times the craft count next to
   Create (right-click takes it off). At the Auction House a panel beside the window lists every reagent you
   still need after what's in your bags and bank, with the cost at the scanned prices. What you buy at the AH

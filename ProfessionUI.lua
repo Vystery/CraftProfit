@@ -965,9 +965,9 @@ end
 -- Profitable only
 ---------------------------------------------------------------------------
 
--- Hides recipes whose net (the one the row tag shows) is a known loss. Same rules as the sort:
---   * Only recipe rows with a net below zero are hidden. A recipe without a price is never hidden: no
---     price is not a loss.
+-- Shows only recipes with a known net above zero (the one the row tag shows):
+--   * Recipe rows that lose or break even are hidden, and so are recipes without a net (a reagent or the
+--     output has no price, or nothing sellable is made): an unknown result is not shown as profitable.
 --   * Rows are taken out of the list Blizzard built with the tree's own node:Remove (no invalidation per
 --     node; the provider is invalidated once at the end). A category left without recipes also loses its
 --     padding rows; a category left with nothing loses its header; the unlearned divider goes when no
@@ -1002,9 +1002,9 @@ local function RestoreHidden(dataProvider)
 	return was
 end
 
-local function IsLoss(data)
+local function FilteredOut(data)
 	local net = UI:GetNet(data.recipeInfo.recipeID)
-	return net ~= nil and net < 0
+	return net == nil or net <= 0
 end
 
 local function Hide(parent, child, hidden)
@@ -1029,7 +1029,7 @@ local function FilterNode(node, hidden)
 			removed = removed or sub
 			if shows or not sub then hasCategory = true else drop[#drop + 1] = child end
 		elseif d and d.recipeInfo and d.recipeInfo.recipeID then
-			if IsLoss(d) then drop[#drop + 1] = child else hasRecipe = true end
+			if FilteredOut(d) then drop[#drop + 1] = child else hasRecipe = true end
 		elseif d and (d.topPadding or d.bottomPadding) then
 			paddings[#paddings + 1] = child
 		end
