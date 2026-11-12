@@ -1315,7 +1315,14 @@ if C_AuctionHouse and type(C_AuctionHouse.PlaceBid) == "function" and hooksecure
 			return
 		end
 		if l.buyout and amount < l.buyout then return end
-		pendingBids[auctionID] = { itemID = l.itemID, qty = l.qty or 1, total = amount, t = GetTime() }
+		-- A result row's buyout is the price of one unit and its quantity is how many the row holds (WoW Forever
+		-- groups identical auctions into one row: "860 at 1s"). What was bought is what the amount pays for,
+		-- never the whole row.
+		local qty = 1
+		if l.buyout and l.buyout > 0 then
+			qty = math.max(1, math.min(l.qty or 1, math.floor(amount / l.buyout + 0.5)))
+		end
+		pendingBids[auctionID] = { itemID = l.itemID, qty = qty, total = amount, t = GetTime() }
 	end)
 end
 CP:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED", function(_, auctionID)

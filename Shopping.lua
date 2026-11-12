@@ -619,13 +619,22 @@ function Shop:Refresh()
 	self:UpdateToggle()
 end
 
--- "Shopping (n)" next to the scan button: shows the window again after it was closed.
+-- "Shop" next to the scan button: shows or hides the shopping window. Kept narrow so it ends before the
+-- AH's bid / buyout boxes on the bottom bar.
 function Shop:UpdateToggle()
 	local ah = AuctionHouseFrame
 	if not ah then return end
 	if not self.toggle then
 		local b = CreateFrame("Button", "CraftProfitShoppingButton", ah, "UIPanelButtonTemplate")
-		b:SetSize(100, 22)
+		b:SetSize(56, 22)
+		b:SetText("Shop")
+		b:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_TOP")
+			GameTooltip:AddLine("Shopping list")
+			GameTooltip:AddLine(string.format("%d recipes on the list. Click to show or hide the list.", #Shop:Recipes()), 1, 1, 1, true)
+			GameTooltip:Show()
+		end)
+		b:SetScript("OnLeave", GameTooltip_Hide)
 		local anchor = CP.Scanner and CP.Scanner.button
 		if anchor then
 			b:SetPoint("LEFT", anchor, "RIGHT", 4, 0)
@@ -640,9 +649,7 @@ function Shop:UpdateToggle()
 		end)
 		self.toggle = b
 	end
-	local n = #self:Recipes()
-	self.toggle:SetText("Shopping (" .. n .. ")")
-	self.toggle:SetShown(n > 0)
+	self.toggle:SetShown(#self:Recipes() > 0)
 end
 
 function Shop:OnAuctionHouseShow()
@@ -651,7 +658,87 @@ function Shop:OnAuctionHouseShow()
 	self:Refresh()
 end
 
-CP:RegisterEvent("AUCTION_HOUSE_SHOW", function() Shop:OnAuctionHouseShow() end)
+---------------------------------------------------------------------------
+-- Buy quantity
+---------------------------------------------------------------------------
+-- When Blizzard's commodities buy page opens for an item the list still needs (from Search all, a row
+-- click or your own search), its quantity is set to what is missing. The quantity goes out the way typing
+-- it does: the AH frame's CommoditiesQuantitySelectionChanged event, which both the buy box and the price list
+-- follow, so the price preview matches the server's quote (setting the input box alone leaves the preview at
+-- one unit and the purchase fails with "no longer available"). SetQuantitySelected is the fallback. Same
+-- calls as our companion addons use, verified in game. The price list re-announces its own number on every
+-- refresh, so it is applied again on each results event for 10 s after the page opens. Item (non-stacking)
+-- auctions have no quantity box and are left alone.
+local APPLY_WINDOW = 10
+local applying -- { itemID, qty, t } for the buy page on screen
+
+function Shop:ApplyQuantity(itemID, qty)
+	local ah = AuctionHouseFrame
+	local frame = ah and ah.CommoditiesBuyFrame
+	local display = frame and frame.BuyDisplay
+	if not display then return false end
+	if type(display.GetItemID) == "function" then
+		local ok, current = pcall(display.GetItemID, display)
+		if ok and current and current ~= itemID then return false end
+	end
+	local event = AuctionHouseFrameMixin and AuctionHouseFrameMixin.Event and AuctionHouseFrameMixin.Event.CommoditiesQuantitySelectionChanged
+	if event and type(ah.TriggerEvent) == "function" then
+		return (pcall(ah.TriggerEvent, ah, event, qty))
+	end
+	if type(display.SetQuantitySelected) == "function" then return (pcall(display.SetQuantitySelected, display, qty)) end
+	return false
+end
+
+local function OnCommodityResults(_, itemID)
+	local ah = AuctionHouseFrame
+	if not (ah and ah:IsShown()) or Shop:IsEmpty() then return end
+	local modes = AuctionHouseFrameDisplayMode
+	if modes and modes.CommoditiesBuy and ah.displayMode ~= modes.CommoditiesBuy then return end
+	if not itemID then
+		local display = ah.CommoditiesBuyFrame and ah.CommoditiesBuyFrame.BuyDisplay
+		local ok, id = pcall(function() return display:GetItemID() end)
+		itemID = ok and id or nil
+	end
+	if not itemID then return end
+	local now = GetTime()
+	if not applying or applying.itemID ~= itemID then
+		-- a newly opened buy page: only for items still to buy
+		applying = nil
+		for _, it in ipairs(Shop:ToBuy()) do
+			if it.itemID == itemID then applying = { itemID = itemID, qty = it.missing, t = now } break end
+		end
+		if not applying then return end
+	elseif now - applying.t > APPLY_WINDOW then
+		return
+	end
+	local a = applying
+	if C_Timer and C_Timer.After then
+		C_Timer.After(0, function() Shop:ApplyQuantity(a.itemID, a.qty) end) -- after Blizzard's own handler
+	else
+		Shop:ApplyQuantity(a.itemID, a.qty)
+	end
+end
+for _, ev in ipairs({ "COMMODITY_SEARCH_RESULTS_RECEIVED", "COMMODITY_SEARCH_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_ADDED" }) do
+	CP:RegisterEvent(ev, OnCommodityResults)
+end
+-- leaving the buy page (or buying) ends it: opening the item again fills in what is still missing then
+CP:RegisterEvent("COMMODITY_PURCHASE_SUCCEEDED", function() applying = nil end)
+CP:RegisterEvent("AUCTION_HOUSE_CLOSED", function() applying = nil end)
+local displayHooked
+local function HookDisplayMode()
+	local ah = AuctionHouseFrame
+	if displayHooked or not (ah and type(ah.SetDisplayMode) == "function" and hooksecurefunc) then return end
+	displayHooked = true
+	pcall(hooksecurefunc, ah, "SetDisplayMode", function(_, mode)
+		local modes = AuctionHouseFrameDisplayMode
+		if not (modes and mode == modes.CommoditiesBuy) then applying = nil end
+	end)
+end
+
+CP:RegisterEvent("AUCTION_HOUSE_SHOW", function()
+	HookDisplayMode()
+	Shop:OnAuctionHouseShow()
+end)
 CP:RegisterEvent("BAG_UPDATE_DELAYED", function()
 	if Shop.frame and Shop.frame:IsShown() then Shop:Refresh() end
 end)

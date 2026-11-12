@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2
+
+- Shopping list: when you open the Auction House buy page for a reagent the list still needs, the quantity is
+  filled in with how many you are missing. Items that are sold one per auction have no quantity box and are
+  left as they are.
+- Fixed: buying one item from a grouped Auction House row (for example 1 of 860 Copper Rods) counted the whole
+  row as bought. CraftProfit now records what you paid for, so the shopping list shows 1 in the mail.
+- The shopping list's button on the Auction House is now a small **Shop** button, so it no longer covers the
+  AH's own bid and buyout boxes.
+
 ## 0.5.1
 
 - **Profitable only**: a Filter menu / options / `/cf profit` toggle that hides recipes whose craft
