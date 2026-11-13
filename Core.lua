@@ -23,6 +23,7 @@ CP.defaults = {
 	trainerTags = true,           -- profit tags in the profession trainer window
 	showReagentPrices = true,
 	showPanel = true,
+	panelDock = "below",          -- where the profit panel goes when the recipe pane has no room: below | right
 	sortByProfit = false,
 	profitableOnly = false,       -- profession list shows only recipes with a craft profit above zero
 	craftIntermediates = false,   -- price reagents you can craft (learned recipe) at their own craft cost
@@ -127,6 +128,7 @@ local function ApplyDefaults(tbl, defaults)
 	end
 	-- netBasis briefly had a third value ("best") in a test build
 	if tbl.netBasis ~= nil and tbl.netBasis ~= "ah" and tbl.netBasis ~= "vendor" then tbl.netBasis = "ah" end
+	if tbl.panelDock ~= nil and tbl.panelDock ~= "below" and tbl.panelDock ~= "right" then tbl.panelDock = "below" end
 end
 
 local function InitDB()
@@ -944,16 +946,17 @@ local function PrintHelp()
 	CP:Print("commands:")
 	CP:Print("  /cf status - sources, scan data, settings")
 	CP:Print("  /cf scan - scan the Auction House (AH must be open)")
-	CP:Print("  /cf depth [on|off] - read your reagents' and outputs' listings now (on/off: after every full scan)")
-	CP:Print("  /cf source auto|craftprofit|auctionator|tsm")
+	CP:Print("  /cf depth [on | off] - read your reagents' and outputs' listings now (on/off: after every full scan)")
+	CP:Print("  /cf source auto | craftprofit | auctionator | tsm")
 	CP:Print("  /cf sort - toggle sort recipes by profit")
 	CP:Print("  /cf profit - toggle listing only profitable crafts")
-	CP:Print("  /cf tag profit|margin|both - what the recipe rows show")
-	CP:Print("  /cf net ah|vendor - show profit for selling on the AH or to a vendor")
+	CP:Print("  /cf tag profit | margin | both - what the recipe rows show")
+	CP:Print("  /cf net ah | vendor - show profit for selling on the AH or to a vendor")
+	CP:Print("  /cf dock below | right - where the profit panel goes when the recipe has no room for it")
 	CP:Print("  /cf trainer - toggle profit tags in the profession trainer window (/cf trainer check lists what each service matched)")
 	CP:Print("  /cf craft - toggle pricing craftable reagents at their own craft cost")
 	CP:Print("  /cf cut <percent> - auction house cut used for net profit")
-	CP:Print("  /cf basis min|market - sale price basis for own scans (market = depth value)")
+	CP:Print("  /cf basis min | market - sale price basis for own scans (market = depth value)")
 	CP:Print("  /cf options - open the settings panel")
 	CP:Print("  /cf tooltip - toggle the CraftProfit block in item tooltips")
 	CP:Print("  /cf shop [clear] - show (or empty) the AH shopping list; add recipes with Shop in the profit panel")
@@ -1004,7 +1007,7 @@ local function HandleSlash(input)
 			CP:SetSetting("rowTag", mode)
 			CP:Print("recipe rows now show %s", mode)
 		else
-			CP:Print("usage: /cf tag profit|margin|both")
+			CP:Print("usage: /cf tag profit | margin | both")
 		end
 	elseif cmd == "net" then
 		local basis = rest:lower()
@@ -1012,7 +1015,15 @@ local function HandleSlash(input)
 			CP:SetSetting("netBasis", basis)
 			CP:Print("profit now shown %s", basis == "ah" and "for selling on the Auction House" or "for selling to a vendor")
 		else
-			CP:Print("usage: /cf net ah|vendor (now %s)", tostring(CP.settings.netBasis))
+			CP:Print("usage: /cf net ah | vendor (now %s)", tostring(CP.settings.netBasis))
+		end
+	elseif cmd == "dock" then
+		local side = rest:lower()
+		if side == "below" or side == "right" then
+			CP:SetSetting("panelDock", side)
+			CP:Print("profit panel goes %s the profession window when the recipe has no room for it", side == "below" and "below" or "to the right of")
+		else
+			CP:Print("usage: /cf dock below | right (now %s)", tostring(CP.settings.panelDock or "below"))
 		end
 	elseif cmd == "trainer" then
 		if rest:lower() == "check" then
@@ -1041,7 +1052,7 @@ local function HandleSlash(input)
 			CP:SetSetting("saleBasis", basis)
 			CP:Print("sale price basis set to %s", basis)
 		else
-			CP:Print("usage: /cf basis min|market")
+			CP:Print("usage: /cf basis min | market")
 		end
 	elseif cmd == "demo" then
 		CP.Demo:Command(rest)

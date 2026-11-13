@@ -2,7 +2,7 @@
 -- Integration with the default profession window (retail Blizzard_Professions, used by WoW Forever):
 --   * profit tag + margin on every recipe row
 --   * unit price / line total under every reagent
---   * "Profit - Auction House" (or "- Vendor", per the netBasis setting) panel in the recipe details
+--   * "Profit (Auction House):" (or "(Vendor):", per the netBasis setting) section in the recipe details
 --   * optional sort-by-profit within categories (Filter dropdown, panel checkbox, /cf sort); see "Sort by profit"
 --   * optional profitable-only filter (Filter dropdown, options, /cf profit); see "Profitable only"
 
@@ -200,15 +200,60 @@ local function ReagentLine(rss)
 	return total .. Muted("  (" .. unit .. ")")
 end
 
+-- A long name wraps to three lines ("0/6 Large Glimmering Shard") and its last line reaches below y=-39.
+-- The name is centred on its LEFT anchor, so the price line goes just under the name's real text height,
+-- and never higher than the usual y=-39 spot.
+local REAGENT_LINE_DROP = -REAGENT_LINE_Y - 25 -- the usual spot, measured from the slot's vertical centre (50px slot)
+
+-- Two ways to show the price: in a right-aligned "column" on the same row as the name (the design, and
+-- the default single-column layout leaves room for it, see UI:PlaceSlotLines), or "below" the name when
+-- something sits to the right (ForeverRecipes' two-per-row reagents) or nothing is measurable yet.
+local function PlaceSlotLine(slot)
+	local fs, name = slot.cpPrice, slot.Name
+	if not fs then return end
+	fs:ClearAllPoints()
+	local col = slot.cpColumn
+	-- Under the name, a three-line name plus the price line is four lines in a 45px slot (crowded with a
+	-- second reagent column). There the name is capped at two lines; the reagent's tooltip has the full name.
+	if name and type(name.SetMaxLines) == "function" then
+		local cap = not col and fs:IsShown()
+		if cap ~= (slot.cpNameCapped or false) then
+			name:SetMaxLines(cap and 2 or 0)
+			slot.cpNameCapped = cap
+		end
+	end
+	if col then
+		fs:SetPoint("RIGHT", slot, "LEFT", col.x, 0)
+		fs:SetWidth(col.w)
+		fs:SetJustifyH("RIGHT")
+		slot.cpLineMode, slot.cpLineDrop = "column", nil
+		return
+	end
+	fs:SetWidth(REAGENT_LINE_WIDTH)
+	fs:SetJustifyH("LEFT")
+	slot.cpLineMode = "below"
+	local h = name and type(name.GetStringHeight) == "function" and name:GetStringHeight() or nil
+	if type(h) == "number" and h > 0 and h / 2 + 1 > REAGENT_LINE_DROP then
+		fs:SetPoint("TOPLEFT", slot, "LEFT", REAGENT_LINE_X, -(h / 2 + 1))
+	else
+		fs:SetPoint("TOPLEFT", slot, "TOPLEFT", REAGENT_LINE_X, REAGENT_LINE_Y)
+	end
+	slot.cpLineDrop = type(h) == "number" and math.max(REAGENT_LINE_DROP, h / 2 + 1) or REAGENT_LINE_DROP
+end
+
 local function EnsureSlotWidget(slot)
 	if slot.cpPrice then return slot.cpPrice end
 	local fs = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	fs:SetPoint("TOPLEFT", slot, "TOPLEFT", REAGENT_LINE_X, REAGENT_LINE_Y)
-	fs:SetWidth(REAGENT_LINE_WIDTH)
-	fs:SetJustifyH("LEFT")
 	if fs.SetWordWrap then fs:SetWordWrap(false) end -- clip the secondary unit price rather than wrap
 	if fs.SetMaxLines then fs:SetMaxLines(1) end
 	slot.cpPrice = fs
+	-- the quantity in the name ("0/6" -> "10/16") or another addon's width change can re-wrap it
+	local name = slot.Name
+	if name and hooksecurefunc then
+		if type(name.SetText) == "function" then hooksecurefunc(name, "SetText", function() PlaceSlotLine(slot) end) end
+		if type(name.SetWidth) == "function" then hooksecurefunc(name, "SetWidth", function() PlaceSlotLine(slot) end) end
+	end
+	PlaceSlotLine(slot)
 	return fs
 end
 
@@ -216,16 +261,19 @@ local function UpdateSlotPrice(slot)
 	local fs = EnsureSlotWidget(slot)
 	if not CP.settings.showReagentPrices or type(slot.GetReagentSlotSchematic) ~= "function" then
 		fs:Hide()
+		PlaceSlotLine(slot)
 		return
 	end
 	local ok, rss = pcall(slot.GetReagentSlotSchematic, slot)
 	local line = ok and rss and ReagentLine(rss) or nil
 	if not line then
 		fs:Hide()
+		PlaceSlotLine(slot) -- gives the name its lines back
 		return
 	end
 	fs:SetText(line)
 	fs:Show()
+	PlaceSlotLine(slot)
 end
 
 -- Basic reagent slots currently shown: Blizzard's plus any demo dummies (Demo.lua).
@@ -246,6 +294,7 @@ function UI:DecorateSlots(form)
 	for _, slot in ipairs(BasicSlots(form)) do
 		UpdateSlotPrice(slot)
 	end
+	self:PlaceSlotLines(form)
 end
 
 local function RefreshSlots(form)
@@ -281,7 +330,12 @@ end
 -- Difficulty block and Source tabs) and ForeverRecipes lays the reagents out two per row. So once the form
 -- is laid out, the panel goes below whatever is actually there instead of assuming Blizzard's layout.
 local PANEL_MIN_HEIGHT = 62     -- title + net row: the smallest panel that still says something
-local PANEL_FLOOR = 8           -- how far the smallest panel may dip into the Track Recipe band
+local PANEL_FLOOR = 8           -- how far the smallest panel may dip into the Track Recipe band (opts-less callers)
+local PANEL_STRIP_HEIGHT = 26   -- one line: net profit + Shop
+local PANEL_DOCK_GAP = 6        -- gap to the profession window: its border reaches a few px past its edge
+local DOCK_TOP, DOCK_BOTTOM, DOCK_PAD = 30, 12, 14 -- docked window: title bar, bottom edge, side padding
+local DOCK_RIGHT_WIDTH = 300    -- docked to the right: the window's width
+local DOCK_RIGHT_GAP = 20       -- like Blizzard's crafting output log (TOPRIGHT x=20) when no tabs are in the way
 local SETTLE_TIME = 0.5         -- neighbours (ForeverRecipes) place their rows a frame or more after us
 
 -- Screen-space rect (scale-normalised), or nil when the region is not laid out yet.
@@ -314,6 +368,9 @@ local function ContentBottom(p, form)
 		if r then
 			if not lowest or r.bottom < lowest then lowest = r.bottom end
 			if not reagentTop or r.top > reagentTop then reagentTop = r.top end
+			-- our price line under a three-line name can reach below the slot
+			local line = slot.cpPrice and Visible(slot.cpPrice) and Rect(slot.cpPrice)
+			if line and line.bottom < lowest then lowest = line.bottom end
 		end
 	end
 	if not lowest then return nil end
@@ -323,7 +380,7 @@ local function ContentBottom(p, form)
 
 	local formHeight = fr.top - fr.bottom
 	local band = fr.bottom + PANEL_BOTTOM * fr.scale -- the Track Recipe row: not content
-	local skip = { [p] = true, [form] = true, [form.Reagents or p] = true, [optional or p] = true }
+	local skip = { [p] = true, [p.cpDock or p] = true, [form] = true, [form.Reagents or p] = true, [optional or p] = true }
 	local function scan(parent)
 		if not (parent and type(parent.GetChildren) == "function") then return end
 		for _, child in ipairs({ parent:GetChildren() }) do
@@ -344,32 +401,270 @@ local function ContentBottom(p, form)
 	return lowest, fr
 end
 
+-- The profession window itself: the last ancestor of `form` below UIParent.
+local function OuterFrame(form)
+	local f = form
+	for _ = 1, 10 do
+		local parent = type(f.GetParent) == "function" and f:GetParent() or nil
+		if not parent or parent == UIParent then break end
+		f = parent
+	end
+	return f
+end
+
+-- Reagent prices go in a right-aligned column on the name's row when every shown slot has at least
+-- REAGENT_COLUMN_MIN px between its name box and the column edge (the profit panel's right edge) with no
+-- other slot in the way. Otherwise, or before layout, all of them go below the name. All slots use the same
+-- mode so the prices line up.
+local REAGENT_COLUMN_MIN, REAGENT_COLUMN_GAP = 80, 8
+
+function UI:PlaceSlotLines(form)
+	local slots = {}
+	for _, slot in ipairs(BasicSlots(form)) do
+		if slot.cpPrice and Visible(slot) then slots[#slots + 1] = slot end
+	end
+	local fr = Rect(form)
+	local plan = fr and fr.right and #slots > 0 and {} or nil
+	if plan then
+		local s = fr.scale
+		local edge = fr.right - PanelRightInset(form) * s
+		local rects = {}
+		for i, slot in ipairs(slots) do
+			local sr, nr = Rect(slot), slot.Name and Rect(slot.Name)
+			if not (sr and sr.left and nr and nr.right) then plan = nil break end
+			rects[i] = { slot = sr, name = nr }
+		end
+		for i = 1, plan and #slots or 0 do
+			local sr, nr = rects[i].slot, rects[i].name
+			local right = edge
+			for j, other in ipairs(rects) do
+				local o = other.slot
+				if j ~= i and o.left > nr.right - 1 and o.top > sr.bottom + 1 and o.bottom < sr.top - 1 then
+					right = math.min(right, o.left - REAGENT_COLUMN_GAP * s)
+				end
+			end
+			local room = (right - nr.right) / s - REAGENT_COLUMN_GAP
+			if room < REAGENT_COLUMN_MIN then plan = nil break end
+			plan[i] = { x = math.floor((right - sr.left) / s + 0.5), w = math.floor(room) }
+		end
+	end
+	for i, slot in ipairs(slots) do
+		slot.cpColumn = plan and plan[i] or nil
+		PlaceSlotLine(slot)
+	end
+end
+
+local DOCK_ART_ATLAS = "Profession-Background-Template2"
+local DOCK_ART_TOP, DOCK_ART_INSET = 21, 3 -- where the profession window starts its art (TOPLEFT 3, -21)
+
+-- Show the part of the background art the window would show at this spot: its bottom-right corner when
+-- docked below (the recipe pane's side), its top-right when docked right. When the art is smaller than the
+-- window it is stretched instead.
+local function PaintDock(f, side)
+	local art, info = f.cpArt, f.cpArtInfo
+	if not art then return end
+	local w = (f:GetWidth() or 0) - 2 * DOCK_ART_INSET
+	local h = (f:GetHeight() or 0) - DOCK_ART_TOP - DOCK_ART_INSET
+	local L, R = info.leftTexCoord or 0, info.rightTexCoord or 1
+	local T, B = info.topTexCoord or 0, info.bottomTexCoord or 1
+	local W, H = info.width or 0, info.height or 0
+	if W <= 0 or H <= 0 or w <= 0 or h <= 0 then return end
+	local u0 = R - (R - L) * math.min(1, w / W)
+	local v0, v1 = T, T + (B - T) * math.min(1, h / H)
+	if side ~= "right" then v0, v1 = B - (B - T) * math.min(1, h / H), B end
+	art:SetTexCoord(u0, R, v0, v1)
+end
+
+-- The window a docked panel sits in: DefaultPanelFlatTemplate, the template of Blizzard's own crafting output
+-- log next to the profession window on Forever (ScrollingFlatPanelTemplate inherits it), with older
+-- templates as fallbacks. Created on first dock, child of the form so it hides with it. One per panel
+-- (companion addons get their own), titled p.cpDockTitle (default "CraftProfit"). Shared as UI.DockFrame.
+local function DockFrame(p, form)
+	if p.cpDock then return p.cpDock end
+	local name = type(p.GetName) == "function" and p:GetName() and (p:GetName() .. "Dock") or nil
+	local dockTitle = p.cpDockTitle or "CraftProfit"
+	local f
+	for _, template in ipairs({ "DefaultPanelFlatTemplate", "DefaultPanelTemplate", "ButtonFrameTemplate", "BasicFrameTemplateWithInset" }) do
+		local ok, frame = pcall(CreateFrame, "Frame", name, form, template)
+		if ok and frame then f = frame break end
+	end
+	if not f then
+		f = CreateFrame("Frame", name, form, BackdropTemplateMixin and "BackdropTemplate" or nil)
+		if f.SetBackdrop then
+			f:SetBackdrop({
+				bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+				edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+				tile = true, tileSize = 32, edgeSize = 32,
+				insets = { left = 11, right = 12, top = 12, bottom = 11 },
+			})
+		end
+		f.TitleText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		f.TitleText:SetPoint("TOP", 0, -14)
+	end
+	if f.PortraitContainer or f.portrait then -- ButtonFrameTemplate fallback
+		if ButtonFrameTemplate_HidePortrait then pcall(ButtonFrameTemplate_HidePortrait, f) end
+		if ButtonFrameTemplate_HideButtonBar then pcall(ButtonFrameTemplate_HideButtonBar, f) end
+	end
+	if f.CloseButton then f.CloseButton:Hide() end
+	if f.Inset then f.Inset:Hide() end -- the panel draws on the window's own background, like the output log
+	local title = (f.TitleContainer and f.TitleContainer.TitleText) or f.TitleText
+	if title then title:SetText(dockTitle) elseif f.SetTitle then pcall(f.SetTitle, f, dockTitle) end
+	f:EnableMouse(true)
+
+	-- The profession window's own art (Forever: CraftingPage paints Profession-Background-Template2 at its atlas
+	-- size), with the recipe pane's inset border around the content. Cropped, not stretched: see PaintDock.
+	local art = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+	art:SetPoint("TOPLEFT", f, "TOPLEFT", DOCK_ART_INSET, -DOCK_ART_TOP)
+	art:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -DOCK_ART_INSET, DOCK_ART_INSET)
+	local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(DOCK_ART_ATLAS)
+	if info and art.SetAtlas and pcall(art.SetAtlas, art, DOCK_ART_ATLAS) then
+		f.cpArt, f.cpArtInfo = art, info
+		if f.Bg then f.Bg:Hide() end -- the flat panel's plain (and on Forever see-through) background
+	else
+		art:Hide()
+	end
+	local okNs, ns = pcall(CreateFrame, "Frame", nil, f, "NineSlicePanelTemplate")
+	if okNs and ns and NineSliceUtil and NineSliceUtil.ApplyLayoutByName
+		and pcall(NineSliceUtil.ApplyLayoutByName, ns, "InsetFrameTemplate") then
+		ns:SetPoint("TOPLEFT", f, "TOPLEFT", DOCK_PAD - 6, -(DOCK_TOP - 6))
+		ns:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -(DOCK_PAD - 6), DOCK_BOTTOM - 6)
+		f.cpInset = ns
+	elseif okNs and ns then
+		ns:Hide()
+	end
+
+	f:Hide()
+	p.cpDock = f
+	return f
+end
+UI.DockFrame = DockFrame
+
 -- Puts panel `p` (a child of `form`) below everything in the reagent area, at most `designHeight` tall.
 -- Returns false when the form is not laid out yet (the caller then uses its own fallback). Shared with
 -- companion addons as UI.PlaceBelowContent.
-local function PlaceBelowContent(p, form, designHeight)
+--
+-- With opts.modes the panel never reaches below the top of the Track Recipe row (so it cannot cover the
+-- Create button): it is "full" when PANEL_MIN_HEIGHT fits, a one-line "strip" when only that fits, and
+-- otherwise "dock"ed under the profession window at the full design height (inside opts.dockFrame(p, form)
+-- when given: p is re-parented into it). The mode is returned and kept in p.cpMode. Without opts the old behaviour stays (the smallest panel may dip into the band).
+local function PlaceBelowContent(p, form, designHeight, opts)
 	local lowest, fr = ContentBottom(p, form)
-	if lowest then
-		local s = fr.scale
-		local offset = (fr.top - lowest) / s + PANEL_GAP
-		local room = (fr.top - fr.bottom) / s - offset - PANEL_BOTTOM
-		local height = math.min(designHeight or PANEL_HEIGHT, room)
-		if height < PANEL_MIN_HEIGHT then
-			height = math.min(PANEL_MIN_HEIGHT, room + PANEL_BOTTOM - PANEL_FLOOR)
+	if not lowest then
+		p.cpGeometry = nil
+		return false
+	end
+	local s = fr.scale
+	local design = designHeight or PANEL_HEIGHT
+	local offset = (fr.top - lowest) / s + PANEL_GAP
+	local room = (fr.top - fr.bottom) / s - offset - PANEL_BOTTOM
+	local mode, height = "full", math.min(design, room)
+	if opts and opts.modes then
+		if room < PANEL_MIN_HEIGHT then
+			mode = room >= PANEL_STRIP_HEIGHT and "strip" or "dock"
+			height = mode == "strip" and PANEL_STRIP_HEIGHT or design
 		end
-		height = math.floor(height + 0.5)
-		if p.cpGeometry and math.abs(p.cpGeometry.offset - offset) < 0.5 and p.cpGeometry.height == height then
-			return true -- already there; avoid re-anchoring every frame while settling
+	elseif height < PANEL_MIN_HEIGHT then
+		height = math.min(PANEL_MIN_HEIGHT, room + PANEL_BOTTOM - PANEL_FLOOR)
+	end
+	height = math.floor(height + 0.5)
+
+	local outer, dockX, dockY, dockWidth, dock, side
+	if mode == "dock" then
+		outer = OuterFrame(form)
+		local orr = outer ~= form and Rect(outer)
+		if not (orr and orr.left) then
+			outer, orr = form, fr -- nothing measurable around the form: hang under the form itself
 		end
-		p.cpGeometry = { offset = offset, height = height }
-		p:ClearAllPoints()
+		dock = opts.dockFrame and opts.dockFrame(p, form) or nil
+		if dock then
+			-- below: the window spans the recipe pane. right: beside the window, top aligned with the pane,
+			-- clear of the profession tabs on its right edge. Below switches to the right (and the other way)
+			-- when it would leave the screen.
+			local tall = (height + DOCK_TOP + DOCK_BOTTOM + PANEL_DOCK_GAP) * s
+			local tabsRight = orr.right
+			for _, tab in ipairs(type(outer.rightProfessionTabs) == "table" and outer.rightProfessionTabs or {}) do
+				local r = Visible(tab) and Rect(tab)
+				if r and r.right and r.right > tabsRight then tabsRight = r.right end
+			end
+			local rightX = (tabsRight - orr.right) / s + (tabsRight > orr.right and 4 or DOCK_RIGHT_GAP)
+			local screen = UIParent and Rect(UIParent)
+			side = opts.side == "right" and "right" or "below"
+			if screen and screen.right then
+				local belowFits = orr.bottom - tall >= screen.bottom
+				local rightFits = orr.right + (rightX + DOCK_RIGHT_WIDTH) * s <= screen.right
+				if side == "below" and not belowFits and rightFits then side = "right" end
+				if side == "right" and not rightFits and belowFits then side = "below" end
+			end
+			if side == "right" then
+				dockX = math.floor(rightX + 0.5)
+				dockY = math.floor((fr.top - orr.top) / s + 0.5)
+				dockWidth = DOCK_RIGHT_WIDTH
+			else
+				dockX = math.floor((fr.left - orr.left) / s + 0.5)
+				dockWidth = math.floor((fr.right - fr.left) / s + 0.5)
+			end
+		else
+			dockX = math.floor((fr.left - orr.left) / s + PANEL_INSET + 0.5)
+			dockWidth = math.floor((fr.right - fr.left) / s - PANEL_INSET - PanelRightInset(form) + 0.5)
+		end
+	end
+
+	local g = p.cpGeometry
+	if g and g.mode == mode and math.abs(g.offset - offset) < 0.5 and g.height == height and g.side == side
+		and (not dock or dock:IsShown()) then
+		return true, mode -- already there; avoid re-anchoring every frame while settling
+	end
+	p.cpGeometry = { offset = offset, height = height, mode = mode, room = room, side = side }
+	p.cpMode = mode
+	p:ClearAllPoints()
+	if not dock and p.cpDock then -- back inside the recipe pane
+		p.cpDock:Hide()
+		if p:GetParent() ~= form then
+			p:SetParent(form)
+			p:SetFrameLevel(form:GetFrameLevel() + 5)
+		end
+	end
+	if dock then
+		dock:ClearAllPoints()
+		if side == "right" then
+			dock:SetPoint("TOPLEFT", outer, "TOPRIGHT", dockX, dockY)
+		else
+			dock:SetPoint("TOPLEFT", outer, "BOTTOMLEFT", dockX, -PANEL_DOCK_GAP)
+		end
+		dock:SetSize(dockWidth, height + DOCK_TOP + DOCK_BOTTOM)
+		PaintDock(dock, side)
+		dock:Show()
+		-- Above the profession window's border (its NineSlice sits at a high frame level), so where the two
+		-- borders meet ours is not drawn underneath. Children follow: inset +1, panel +5, title +10.
+		local top = type(outer.GetFrameLevel) == "function" and outer:GetFrameLevel() or 0
+		local ns = outer.NineSlice
+		if ns and type(ns.GetFrameLevel) == "function" then top = math.max(top, ns:GetFrameLevel()) end
+		if dock:GetFrameLevel() <= top then
+			dock:SetFrameLevel(top + 1)
+			if dock.NineSlice then dock.NineSlice:SetFrameLevel(top + 2) end
+			if dock.cpInset then dock.cpInset:SetFrameLevel(top + 2) end
+			if dock.TitleContainer then dock.TitleContainer:SetFrameLevel(top + 12) end
+		end
+		if p:GetParent() ~= dock then p:SetParent(dock) end
+		p:SetFrameLevel(dock:GetFrameLevel() + 5)
+		if not p.cpDockHooked and type(p.HookScript) == "function" then
+			-- the panel hidden (no recipe, Sell <-> Shuffle, option off) takes its window with it
+			p.cpDockHooked = true
+			p:HookScript("OnHide", function(self)
+				if self.cpDock and self:GetParent() == self.cpDock then self.cpDock:Hide() end
+			end)
+		end
+		p:SetPoint("TOPLEFT", dock, "TOPLEFT", DOCK_PAD, -DOCK_TOP)
+		p:SetSize(dockWidth - 2 * DOCK_PAD, height)
+	elseif mode == "dock" then
+		p:SetPoint("TOPLEFT", outer, "BOTTOMLEFT", dockX, -PANEL_DOCK_GAP)
+		p:SetSize(dockWidth, height)
+	else
 		p:SetPoint("TOPLEFT", form, "TOPLEFT", PANEL_INSET, -offset)
 		p:SetPoint("RIGHT", form, "RIGHT", -PanelRightInset(form), 0)
 		p:SetHeight(height)
-		return true
 	end
-	p.cpGeometry = nil
-	return false
+	return true, mode
 end
 UI.PlaceBelowContent = PlaceBelowContent
 
@@ -393,10 +688,20 @@ end
 UI.SettlePanel = SettlePanel
 
 local function AnchorPanel(p, form)
-	if PlaceBelowContent(p, form, PANEL_HEIGHT) then
+	local wasMode = p.cpMode
+	UI:PlaceSlotLines(form) -- reagents may have moved (ForeverRecipes re-lays them out after us)
+	if PlaceBelowContent(p, form, PANEL_HEIGHT, { modes = true, dockFrame = DockFrame, side = CP.settings.panelDock }) then
 		p.cpStretch = false
 		p.cpAnchor = nil
+		-- strip <-> full at the same height does not fire OnSizeChanged
+		if p.cpMode ~= wasMode then p:cpLayout() end
 		return
+	end
+	p.cpMode = "full"
+	if p.cpDock and p.cpDock:IsShown() then -- not measurable: back into the pane
+		p.cpDock:Hide()
+		p:SetParent(form)
+		p:SetFrameLevel(form:GetFrameLevel() + 5)
 	end
 
 	local slots = BasicSlots(form)
@@ -444,38 +749,80 @@ local function CapPanelHeight(p)
 	return true -- OnSizeChanged fires again with the capped height
 end
 
--- Show as many stat rows as the current height allows; below ~88px the checkbox row goes too.
+-- Header right side: "scanned 3h ago", or "Auctionator · 3h" for another source. When that does not fit
+-- between the title and Shop, the source name goes (the panel tooltip names it).
+local function FitHeader(p)
+	local full, short = p.cpAgeFull or "", p.cpAgeShort or p.cpAgeFull or ""
+	local title = type(p.Title.GetStringWidth) == "function" and p.Title:GetStringWidth() or 0
+	local room = (p:GetWidth() or PANEL_MAX_WIDTH) - title - 8 - 6 - 44
+	p.Age:SetText(full)
+	if full ~= short and type(p.Age.GetStringWidth) == "function" and p.Age:GetStringWidth() > room then
+		p.Age:SetText(short)
+	end
+end
+
+local function SetStripMode(p, strip)
+	p.ShopButton:ClearAllPoints()
+	if strip then
+		p.ShopButton:SetPoint("RIGHT", p, "RIGHT", 0, 0)
+	else
+		p.ShopButton:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, 0)
+	end
+	p.Title:SetShown(not strip)
+	p.Age:SetShown(not strip)
+end
+
+-- Laid out like the default UI's own sections in the recipe pane ("Reagents:", "Optional Target:"): a gold
+-- section label, then plain rows on the pane's background, no box. Inside the docked window the same.
+-- Shows as many stat rows as the height allows; the checkboxes only once all four rows fit.
+-- A "strip" panel (see PlaceBelowContent) is one line: Net profit, value, Shop.
+local PANEL_HEADER_H = 24
 local function LayoutPanel(p)
 	if CapPanelHeight(p) then return end
+	if p.cpMode == "strip" then
+		SetStripMode(p, true)
+		for _, fs in ipairs({ p.CostLabel, p.Cost, p.SaleLabel, p.Sale, p.AltLabel, p.Alt, p.SoldLabel, p.Sold }) do fs:Hide() end
+		p.Divider:Hide()
+		p.NetLabel:ClearAllPoints()
+		p.NetLabel:SetPoint("LEFT", p, "LEFT", 0, 0)
+		p.Net:ClearAllPoints()
+		p.Net:SetPoint("RIGHT", p.ShopButton, "LEFT", -8, 0)
+		p.SortCheck:Hide()
+		p.CraftCheck:Hide()
+		p.VendorCheck:Hide()
+		p.cpStatsShown = 0
+		return
+	end
+	SetStripMode(p, false)
+	FitHeader(p)
 	local h = p:GetHeight() or PANEL_HEIGHT
-	local fixed = 30 + 8 + 18 + 6          -- title area, divider gap, net row, bottom pad
-	local showChecks = h >= fixed + 26
-	if showChecks then fixed = fixed + 26 end
+	local fixed = PANEL_HEADER_H + 8 + 18 + 2 -- section label, divider gap, net row, bottom
 	local rows = { { p.CostLabel, p.Cost }, { p.SaleLabel, p.Sale }, { p.AltLabel, p.Alt }, { p.SoldLabel, p.Sold } }
 	local nStats = math.floor((h - fixed) / STAT_ROW_H)
 	if nStats < 0 then nStats = 0 end
 	if nStats > #rows then nStats = #rows end
+	local showChecks = nStats == #rows and h >= fixed + #rows * STAT_ROW_H + 26
 
 	for i, row in ipairs(rows) do
 		local shown = i <= nStats
-		local y = -30 - (i - 1) * STAT_ROW_H
+		local y = -PANEL_HEADER_H - (i - 1) * STAT_ROW_H
 		row[1]:ClearAllPoints()
-		row[1]:SetPoint("TOPLEFT", 10, y)
+		row[1]:SetPoint("TOPLEFT", 0, y)
 		row[2]:ClearAllPoints()
-		row[2]:SetPoint("TOPRIGHT", -10, y)
+		row[2]:SetPoint("TOPRIGHT", 0, y)
 		row[1]:SetShown(shown)
 		row[2]:SetShown(shown)
 	end
 
-	local y = -30 - nStats * STAT_ROW_H + 3
+	local y = -PANEL_HEADER_H - nStats * STAT_ROW_H + 3
 	p.Divider:ClearAllPoints()
-	p.Divider:SetPoint("TOPLEFT", 10, y)
-	p.Divider:SetPoint("TOPRIGHT", -10, y)
+	p.Divider:SetPoint("TOPLEFT", 0, y)
+	p.Divider:SetPoint("TOPRIGHT", 0, y)
 	p.Divider:SetShown(nStats > 0)
 	p.NetLabel:ClearAllPoints()
-	p.NetLabel:SetPoint("TOPLEFT", 10, y - 7)
+	p.NetLabel:SetPoint("TOPLEFT", 0, y - 7)
 	p.Net:ClearAllPoints()
-	p.Net:SetPoint("TOPRIGHT", -10, y - 5)
+	p.Net:SetPoint("TOPRIGHT", 0, y - 5)
 
 	p.SortCheck:SetShown(showChecks)
 	p.CraftCheck:SetShown(showChecks)
@@ -484,8 +831,7 @@ local function LayoutPanel(p)
 end
 
 local function CreatePanel(form)
-	local template = BackdropTemplateMixin and "BackdropTemplate" or nil
-	local p = CreateFrame("Frame", "CraftProfitPanel", form, template)
+	local p = CreateFrame("Frame", "CraftProfitPanel", form)
 	p:SetSize(PANEL_MAX_WIDTH, PANEL_HEIGHT)
 	p:SetFrameLevel(form:GetFrameLevel() + 5)
 
@@ -500,28 +846,19 @@ local function CreatePanel(form)
 		end)
 	end
 	p:SetScript("OnSizeChanged", function(self) LayoutPanel(self) end)
+	p.cpLayout = LayoutPanel
 
-	if p.SetBackdrop then
-		p:SetBackdrop({
-			bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-			tile = true, tileSize = 16, edgeSize = 12,
-			insets = { left = 3, right = 3, top = 3, bottom = 3 },
-		})
-		p:SetBackdropColor(0.07, 0.05, 0.03, 0.92)
-		p:SetBackdropBorderColor(0.42, 0.35, 0.24, 1)
-	end
-
-	p.Title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	p.Title:SetPoint("TOPLEFT", 10, -9)
-	p.Title:SetText("Profit \226\128\148 Auction House")
+	-- no box: the pane's (or the docked window's) own background, like the default sections above it
+	p.Title = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	p.Title:SetPoint("TOPLEFT", 0, -3)
+	p.Title:SetText("Profit (Auction House):")
 
 	-- Scan age (and the source when it is not our own scan) on the header's right side. Anchored to
 	-- both the title and the right edge so it clips instead of overlapping the title when narrow.
 	-- "Shop": adds this recipe (times Blizzard's craft count) to the AH shopping list (Shopping.lua).
 	p.ShopButton = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
 	p.ShopButton:SetSize(44, 18)
-	p.ShopButton:SetPoint("TOPRIGHT", p, "TOPRIGHT", -6, -5)
+	p.ShopButton:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, 0)
 	p.ShopButton:SetText("Shop")
 	if p.ShopButton.RegisterForClicks then p.ShopButton:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
 	p.ShopButton:SetScript("OnClick", function(self, button) UI:ShopClicked(self, button) end)
@@ -571,7 +908,7 @@ local function CreatePanel(form)
 		return cb
 	end
 	p.SortCheck = Checkbox("Sort by profit", function(checked) UI:SetSortByProfit(checked) end)
-	p.SortCheck:SetPoint("BOTTOMLEFT", 6, 4)
+	p.SortCheck:SetPoint("BOTTOMLEFT", -4, -2) -- the checkbox art has ~4px padding: line the box up with the text
 	p.CraftCheck = Checkbox("Craft reagents", function(checked) CP:SetSetting("craftIntermediates", checked) end)
 	if p.SortCheck.label then
 		p.CraftCheck:SetPoint("LEFT", p.SortCheck.label, "RIGHT", 10, 0)
@@ -610,6 +947,10 @@ local function CreatePanel(form)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		GameTooltip:AddLine("CraftProfit")
 		GameTooltip:AddLine("Source: " .. CP:GetSourceName(), 1, 1, 1)
+		if eco.soldSource and eco.soldSource ~= eco.source then
+			local def = CP.Sources:Get(eco.soldSource)
+			GameTooltip:AddLine("Sold per day: " .. (def and def.name or eco.soldSource), 1, 1, 1)
+		end
 		if (self.cpStatsShown or 4) < 4 then
 			-- rows hidden for lack of space: repeat them here
 			GameTooltip:AddDoubleLine("Total craft cost", eco.cost > 0 and CP:FormatMoney(eco.cost) or "-", 0.8, 0.8, 0.8, 1, 1, 1)
@@ -784,11 +1125,13 @@ function UI:UpdateDetail(form, recipeInfo)
 	SettlePanel(p, form, AnchorPanel)
 
 	local ageText = eco.age and ("scanned " .. CP:FormatAge(eco.age)) or "no price data"
+	local shortText = ageText
 	local source = CP.Sources:Resolve()
 	if source and source.key ~= "craftprofit" then
-		ageText = source.name .. " \194\183 " .. (eco.age and CP:FormatAge(eco.age) or "no data")
+		shortText = eco.age and CP:FormatAge(eco.age) or "no data"
+		ageText = source.name .. " \194\183 " .. shortText
 	end
-	p.Age:SetText(ageText)
+	p.cpAgeFull, p.cpAgeShort = ageText, shortText
 
 	local costText
 	if eco.costComplete and #eco.reagents > 0 then
@@ -808,7 +1151,8 @@ function UI:UpdateDetail(form, recipeInfo)
 	-- Lead with the net the netBasis setting picks; the other way to sell goes in the extra row.
 	local net, margin, kind = UI:DisplayNet(eco)
 	local vendorLead = kind == "vendor" or (kind == nil and CP.settings.netBasis == "vendor")
-	p.Title:SetText(vendorLead and "Profit \226\128\148 Vendor" or "Profit \226\128\148 Auction House")
+	p.Title:SetText(vendorLead and "Profit (Vendor):" or "Profit (Auction House):")
+	FitHeader(p)
 
 	local qtyText = (eco.quantity and eco.quantity ~= 1) and string.format(" (x%g)", eco.quantity) or ""
 	local function Signed(value)

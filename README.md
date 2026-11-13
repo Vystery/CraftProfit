@@ -87,6 +87,7 @@ The older `/cp` still works for every command.
 /cf profit           toggle listing only profitable crafts
 /cf tag <mode>       profit | margin | both
 /cf net <basis>      ah | vendor: which profit tags, sorting and the panel lead with
+/cf dock <side>      below | right: where the profit panel goes when the recipe has no room for it
 /cf trainer          toggle profit tags at profession trainers (/cf trainer check lists the matches)
 /cf craft            toggle pricing reagents at their own craft cost
 /cf cut <percent>    Auction House cut used for net profit
@@ -113,7 +114,8 @@ The older `/cp` still works for every command.
 - Auctionator and TSM prices (including custom TSM price strings) have not been tested in game yet; the
   built-in scan is the tested source. If they look wrong, use `/cf source craftprofit` and report it.
 - Sold per day counts every listing that disappeared between two scans, so expired and cancelled auctions
-  count too. Treat it as an upper bound.
+  count too. Treat it as an upper bound. Auctionator has no sales data, so with Auctionator as the price
+  source sold per day still comes from your own CraftProfit scans.
 - Recipes whose output is not an item (enchants, for example) show cost only.
 - The depth scan reads one item at a time and is limited by the Auction House's search throttle; the chat
   message at the end shows how long it took per item and where the time went. It reads at most 400 items per run.

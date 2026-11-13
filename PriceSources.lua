@@ -141,9 +141,19 @@ function CP:GetReagentCostFor(itemID, quantity)
 	return DemoScale(total), DemoScale(avg), kind, info
 end
 
+-- units per day, source key. Sources without sales data (Auctionator) fall back to CraftProfit's own
+-- scan history, so prices can come from one source and sold per day from another.
 function CP:GetSoldPerDay(itemID)
+	if not itemID then return nil end
 	local def = Sources:Resolve()
-	return def and SafeCall(def, "GetSoldPerDay", itemID) or nil
+	local value = def and SafeCall(def, "GetSoldPerDay", itemID) or nil
+	if value then return value, def.key end
+	local own = Sources.byKey.craftprofit
+	if own and own ~= def then
+		value = SafeCall(own, "GetSoldPerDay", itemID)
+		if value then return value, own.key end
+	end
+	return nil
 end
 
 function CP:GetPriceAge(itemID)

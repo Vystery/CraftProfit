@@ -352,7 +352,7 @@ function Calc:ComputeInternal(recipeID, depth)
 			eco.sale = unit * eco.quantity
 			eco.cut = eco.sale * (CP.settings.ahCut or 0)
 		end
-		eco.soldPerDay = CP:GetSoldPerDay(eco.outputItemID)
+		eco.soldPerDay, eco.soldSource = CP:GetSoldPerDay(eco.outputItemID)
 		eco.age = CP:GetPriceAge(eco.outputItemID)
 	end
 

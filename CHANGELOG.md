@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.3
+
+- Fixed: **Sold per day** was blank when the price source was Auctionator (for example on "auto" with
+  Auctionator installed). Prices still come from Auctionator; sold per day now comes from CraftProfit's own
+  scan history, and the profit panel tooltip says so.
+- Fixed: on recipes with a long description and many reagents (enchants with an "Enchant" target slot in
+  particular) the profit panel could cover Track Recipe and the Create/Enchant button. It now never goes below
+  Track Recipe. When space is short it becomes one line (net profit and Shop; the rest is in its tooltip).
+  When there is no room at all it opens in its own CraftProfit window next to the profession window, drawn
+  with the profession window's own border and background.
+- New option **Profit panel when there is no room** (also `/cf dock below | right`): that window goes below the
+  profession window or to its right, for small screens. If the chosen side would leave the screen, the other
+  one is used.
+- The profit panel now looks like the recipe pane's own sections ("Reagents:", "Optional Target:"): a gold
+  "Profit (Auction House):" label and plain rows, no box. When space is short, the stat rows stay and the
+  checkboxes go first. The header drops the price source's name when it does not fit next to Shop (the
+  tooltip still names it).
+- Reagent prices now sit to the right of the reagent name, lined up with the profit panel, when the reagents
+  are in one column. With a second column of reagents (five or more, or ForeverRecipes' two per row) they stay
+  under the name, and a long reagent name is cut at two lines (the full name is in its tooltip) so the price
+  never covers the name.
+- Fixed: help and usage lines such as `/cf net ah|vendor` or `/cf source auto|craftprofit|...` lost
+  characters in chat (a "|" starts a chat color code). They now read `/cf net ah | vendor`.
+
 ## 0.5.2
 
 - Shopping list: when you open the Auction House buy page for a reagent the list still needs, the quantity is

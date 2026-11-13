@@ -92,6 +92,14 @@ function Options:Setup()
 		local panel = Proxy(category, "showPanel", Settings.VarType.Boolean, "Profit panel in recipe details", CP.defaults.showPanel)
 		Settings.CreateCheckbox(category, panel, "Show the profit breakdown (Auction House and vendor) for the selected recipe.")
 
+		local dock = Proxy(category, "panelDock", Settings.VarType.String, "Profit panel when there is no room", CP.defaults.panelDock)
+		Settings.CreateDropdown(category, dock, function()
+			local container = Settings.CreateControlTextContainer()
+			container:Add("below", "Below the profession window")
+			container:Add("right", "Right of the profession window")
+			return container:GetData()
+		end, "Recipes with a long description and many reagents leave no room for the profit panel inside the recipe details. It then opens in its own small window here. Right suits small screens. If the chosen side would leave the screen, the other one is used.")
+
 		local sort = Proxy(category, "sortByProfit", Settings.VarType.Boolean, "Sort recipes by profit", CP.defaults.sortByProfit,
 			function(value) CP.UI:SetSortByProfit(value) end)
 		Settings.CreateCheckbox(category, sort, "Within each category, list the most profitable recipes first.")
