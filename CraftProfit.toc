@@ -6,7 +6,7 @@
 ## Version: 0.5.2
 ## SavedVariables: CraftProfitDB
 ## SavedVariablesPerCharacter: CraftProfitCharDB
-## OptionalDeps: Auctionator, TradeSkillMaster
+## OptionalDeps: Auctionator, TradeSkillMaster, ForeverMaster
 ## IconTexture: Interface\Icons\INV_Misc_Coin_01
 ## X-Category: Professions
 
@@ -20,5 +20,6 @@ Calculator.lua
 ProfessionUI.lua
 Shopping.lua
 Trainer.lua
+Missing.lua
 Options.lua
 Demo.lua

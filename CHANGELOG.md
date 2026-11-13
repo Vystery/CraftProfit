@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Missing profitable recipes**: a side tab on the profession window (and `/cf missing`) lists crafts
+  you have not learned yet where Auction House net or vendor net is positive. Uses ForeverMaster's
+  Forever recipe catalog for trainer and Plans/Pattern recipes of the professions you have. Hover a
+  row for cost, both nets and the recipe source (trainer or recipe item). Toggle with options or
+  `/cf missing on|off`.
+
 ## 0.5.2
 
 - Shopping list: when you open the Auction House buy page for a reagent the list still needs, the quantity is

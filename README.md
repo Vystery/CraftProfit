@@ -36,6 +36,10 @@ can skip the scan. Pick a specific source in the options or with `/cf source`.
 - **Profession trainers**: every recipe the trainer offers shows its profit, so you can see which ones are
   worth learning first. Hover a recipe for the breakdown and how many crafts pay back the training cost.
   Turn it off with `/cf trainer`.
+- **Missing profitable recipes**: a side tab on the profession window lists crafts you do not know yet that
+  would profit on the Auction House or sold to a vendor (for the professions you have). Needs
+  **ForeverMaster** for the Forever recipe list. `/cf missing` prints the same list; `/cf missing on|off`
+  toggles the tab.
 - **Sort by profit**: most profitable recipes first within each category. Toggle it in the profession
   window's Filter menu, the panel checkbox, or `/cf sort`.
 - **Profitable only**: show only recipes with a craft profit above zero (losses, break-even and missing prices are hidden). Toggle it
@@ -88,6 +92,7 @@ The older `/cp` still works for every command.
 /cf tag <mode>       profit | margin | both
 /cf net <basis>      ah | vendor: which profit tags, sorting and the panel lead with
 /cf trainer          toggle profit tags at profession trainers (/cf trainer check lists the matches)
+/cf missing [on|off] list missing profitable recipes (needs ForeverMaster); on/off toggles the side tab
 /cf craft            toggle pricing reagents at their own craft cost
 /cf cut <percent>    Auction House cut used for net profit
 /cf basis min|market sale price from your scans: lowest buyout, or market (depth value, else median of recent scans)
