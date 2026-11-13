@@ -96,6 +96,10 @@ function Options:Setup()
 			function(value) CP.UI:SetSortByProfit(value) end)
 		Settings.CreateCheckbox(category, sort, "Within each category, list the most profitable recipes first.")
 
+		local ungroup = Proxy(category, "ungroupRecipes", Settings.VarType.Boolean, "Ungroup recipes", CP.defaults.ungroupRecipes,
+			function(value) CP.UI:SetUngroupRecipes(value) end)
+		Settings.CreateCheckbox(category, ungroup, "Drop Everyday Meals / Stamina Food style headers and show one flat list, sorted by profit.")
+
 		local profitable = Proxy(category, "profitableOnly", Settings.VarType.Boolean, "Only show profitable crafts", CP.defaults.profitableOnly,
 			function(value) CP.UI:SetProfitableOnly(value) end)
 		Settings.CreateCheckbox(category, profitable, "Show only recipes that make a profit: hides losses, break-even and unknown profit (missing prices).")

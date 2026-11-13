@@ -38,6 +38,8 @@ can skip the scan. Pick a specific source in the options or with `/cf source`.
   Turn it off with `/cf trainer`.
 - **Sort by profit**: most profitable recipes first within each category. Toggle it in the profession
   window's Filter menu, the panel checkbox, or `/cf sort`.
+- **Ungroup recipes**: drop category headers (Everyday Meals, Stamina Food, …) and show one flat list
+  sorted by profit. Filter menu, options, or `/cf ungroup`.
 - **Profitable only**: show only recipes with a craft profit above zero (losses, break-even and missing prices are hidden). Toggle it
   in the Filter menu, the options, or `/cf profit`.
 - **Craft reagents I can make**: reagents you have a recipe for (Bolt of Woolen Cloth, for example) are
@@ -84,6 +86,7 @@ The older `/cp` still works for every command.
 /cf options          open the settings panel (also under Options > AddOns > CraftProfit)
 /cf source <name>    auto | craftprofit | auctionator | tsm
 /cf sort             toggle sort by profit
+/cf ungroup          toggle a flat recipe list (no category headers, sorted by profit)
 /cf profit           toggle listing only profitable crafts
 /cf tag <mode>       profit | margin | both
 /cf net <basis>      ah | vendor: which profit tags, sorting and the panel lead with
