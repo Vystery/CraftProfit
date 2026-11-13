@@ -721,7 +721,8 @@ function Missing:UpdateHeaderLabels()
 	local ui = self.ui
 	if not (ui and ui.headerButtons) then return end
 	local key = self.sortKey or "best"
-	local arrow = (self.sortDesc ~= false) and " ▼" or " ▲"
+	-- Friz Quadrata has no triangle glyphs, so ▼/▲ draw as an empty box.
+	local arrow = (self.sortDesc ~= false) and " v" or " ^"
 	for _, col in ipairs(COLS) do
 		local btn = ui.headerButtons[col.key]
 		if btn and btn.Label then
