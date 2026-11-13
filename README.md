@@ -102,7 +102,7 @@ The older `/cp` still works for every command.
 
 | Source | Where prices come from |
 |---|---|
-| `auto` (default) | the first of Auctionator, TSM and your own scan that is installed and has data |
+| `auto` (default) | the first of Auctionator, TSM and your own scan that is installed and has data; an item it has no price for is looked up in the others |
 | `craftprofit` | your own full Auction House scan (lowest buyout, listed quantity, recent history) |
 | `auctionator` | Auctionator's scan database (run a Full Scan in Auctionator) |
 | `tsm` | TradeSkillMaster price sources (`DBMarket` etc. need TSM data for your realm) |
