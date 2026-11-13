@@ -67,6 +67,24 @@ local function SafeCall(def, method, itemID)
 	return nil
 end
 
+-- The active source's answer for an item. On "auto", an item the active source has no price for is
+-- looked up in the other installed sources, in the same order, so one item missing from Auctionator does
+-- not leave a recipe unpriced. Returns the value and the source that answered (the active one when none did).
+local function Lookup(method, itemID)
+	local active = Sources:Resolve()
+	if not active then return nil end
+	local value = SafeCall(active, method, itemID)
+	if value or ((CP.settings and CP.settings.source) or "auto") ~= "auto" then return value, active end
+	for _, key in ipairs(Sources.AUTO_ORDER) do
+		local def = Sources.byKey[key]
+		if def and def ~= active and def:IsAvailable() then
+			value = SafeCall(def, method, itemID)
+			if value then return value, def end
+		end
+	end
+	return nil, active
+end
+
 ---------------------------------------------------------------------------
 -- Unified lookups
 ---------------------------------------------------------------------------
@@ -87,9 +105,8 @@ end
 function CP:GetSalePrice(itemID)
 	if not itemID then return nil end
 	self:Touch(itemID)
-	local def = Sources:Resolve()
+	local price, def = Lookup("GetSalePrice", itemID)
 	if not def then return nil end
-	local price = SafeCall(def, "GetSalePrice", itemID)
 	return DemoScale(price), def.key
 end
 
@@ -97,8 +114,7 @@ end
 function CP:GetReagentCost(itemID)
 	if not itemID then return nil end
 	self:Touch(itemID)
-	local def = Sources:Resolve()
-	local ah = def and SafeCall(def, "GetCostPrice", itemID) or nil
+	local ah = Lookup("GetCostPrice", itemID)
 	local vendor = self.Vendor:GetPrice(itemID)
 	if vendor and (not ah or (self.settings.useVendorWhenCheaper and vendor < ah)) then
 		return DemoScale(vendor), "vendor"
@@ -126,7 +142,7 @@ function CP:GetReagentCostFor(itemID, quantity)
 			info = { source = "min", minPrice = unit, listed = listed, full = listed ~= nil,
 				covered = listed and math.min(quantity, listed) or quantity,
 				short = (listed and unitKind ~= "vendor") and math.max(0, quantity - listed) or 0,
-				age = self:GetPriceAge(itemID) }
+				age = self:GetPriceAge(itemID, "GetCostPrice") }
 		end
 	end
 	local vendor = self.Vendor:GetPrice(itemID)
@@ -156,8 +172,9 @@ function CP:GetSoldPerDay(itemID)
 	return nil
 end
 
-function CP:GetPriceAge(itemID)
-	local def = Sources:Resolve()
+-- method: the lookup the price came from ("GetCostPrice" for a reagent), so the age is that source's.
+function CP:GetPriceAge(itemID, method)
+	local _, def = Lookup(method or "GetSalePrice", itemID)
 	if not def or not def.GetAge then return nil end
 	local ok, age = pcall(def.GetAge, def, itemID)
 	if ok and type(age) == "number" then return age end

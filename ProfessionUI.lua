@@ -946,7 +946,8 @@ local function CreatePanel(form)
 		if not eco then return end
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		GameTooltip:AddLine("CraftProfit")
-		GameTooltip:AddLine("Source: " .. CP:GetSourceName(), 1, 1, 1)
+		local priced = eco.source and CP.Sources:Get(eco.source)
+		GameTooltip:AddLine("Source: " .. (priced and priced.name or CP:GetSourceName()), 1, 1, 1)
 		if eco.soldSource and eco.soldSource ~= eco.source then
 			local def = CP.Sources:Get(eco.soldSource)
 			GameTooltip:AddLine("Sold per day: " .. (def and def.name or eco.soldSource), 1, 1, 1)
@@ -1126,7 +1127,7 @@ function UI:UpdateDetail(form, recipeInfo)
 
 	local ageText = eco.age and ("scanned " .. CP:FormatAge(eco.age)) or "no price data"
 	local shortText = ageText
-	local source = CP.Sources:Resolve()
+	local source = (eco.source and CP.Sources:Get(eco.source)) or CP.Sources:Resolve()
 	if source and source.key ~= "craftprofit" then
 		shortText = eco.age and CP:FormatAge(eco.age) or "no data"
 		ageText = source.name .. " \194\183 " .. shortText

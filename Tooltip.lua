@@ -34,7 +34,8 @@ function Tooltip:Lines(itemID, stack)
 		lines[#lines + 1] = { "Auction price", tostring(reason), true }
 		return lines
 	end
-	local price = CP:GetSalePrice(itemID)
+	local price, key = CP:GetSalePrice(itemID)
+	def = key and CP.Sources:Get(key) or def
 	if def.key == "craftprofit" then
 		if price then
 			local qty = scanner:GetQuantity(itemID)
