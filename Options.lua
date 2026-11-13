@@ -86,6 +86,9 @@ function Options:Setup()
 		local trainer = Proxy(category, "trainerTags", Settings.VarType.Boolean, "Profit tags at profession trainers", CP.defaults.trainerTags)
 		Settings.CreateCheckbox(category, trainer, "Show each recipe's profit in the trainer window, so you can see which recipes are worth learning first. The tooltip adds the breakdown and how many crafts pay back the training cost.")
 
+		local missing = Proxy(category, "missingTab", Settings.VarType.Boolean, "Missing profitable recipes tab", CP.defaults.missingTab)
+		Settings.CreateCheckbox(category, missing, "Side tab on the profession window listing crafts you have not learned that would profit on the Auction House or at a vendor. Uses ForeverMaster's recipe list.")
+
 		local reagents = Proxy(category, "showReagentPrices", Settings.VarType.Boolean, "Reagent prices in recipe details", CP.defaults.showReagentPrices)
 		Settings.CreateCheckbox(category, reagents, "Show unit price and line total under each reagent.")
 
