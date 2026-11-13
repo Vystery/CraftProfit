@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Ungroup recipes**: Filter menu / options / `/cf ungroup` drops category headers and shows one flat
+  list sorted by profit, so the best craft is at the top instead of buried under Everyday Meals / Stamina Food.
+
 ## 0.5.2
 
 - Shopping list: when you open the Auction House buy page for a reagent the list still needs, the quantity is
