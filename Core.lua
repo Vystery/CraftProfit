@@ -242,7 +242,7 @@ end
 
 local svWatchers = {}
 
--- onAdopt(loaded, provisional, reason) must merge provisional into loaded and repoint the addon at loaded.
+-- onAdopt(loaded, provisional, reason, name) must merge provisional into loaded and repoint the addon at loaded.
 -- pack(live) (optional) returns the table to hand the client at logout (the compact form).
 -- group: watchers of the same addon (account-wide and per-character copies of the same data) share a
 -- group; the first copy the client hands back is adopted, a later duplicate is ignored.
@@ -343,7 +343,7 @@ function CP:CheckSavedVariables(reason)
 				-- the sibling copy already arrived and was merged; this one is the same data
 				_G[name] = w.current
 			else
-				local ok, err = pcall(w.onAdopt, g, w.current, reason)
+				local ok, err = pcall(w.onAdopt, g, w.current, reason, name)
 				if ok then
 					local live = _G[name] -- the adopter may have replaced the global (unpacked form)
 					w.adopted = w.adopted + 1
@@ -683,13 +683,13 @@ end
 
 -- CraftProfit's own merge: prices/ladders/depth values newest wins, daily price history by day, histories and
 -- purchases append, the rest unions.
-local function AdoptCraftProfitDB(loaded, provisional, reason)
+local function AdoptCraftProfitDB(loaded, provisional, reason, name)
 	local M = CP.Merge
 	if CP:IsPacked(loaded) then
 		loaded = CP:UnpackDB(loaded)
 		if not tostring(reason):find("backup", 1, true) and reason ~= "console vault" then
 			-- put the unpacked table into whichever global the copy came from
-			if reason:find("CraftProfitCharDB") then _G.CraftProfitCharDB = loaded else _G.CraftProfitDB = loaded end
+			if name == "CraftProfitCharDB" then _G.CraftProfitCharDB = loaded else _G.CraftProfitDB = loaded end
 		end
 	end
 	loaded.settings = M.Settings(loaded.settings or {}, provisional.settings, CP.touched)
