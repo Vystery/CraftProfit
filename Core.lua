@@ -515,7 +515,7 @@ function CP:PackDB(db)
 				for i = 1, math.min(#ladder.tiers, PACK_TIERS) do
 					tiers[#tiers + 1] = Enc(ladder.tiers[i][1]) .. "." .. Enc(ladder.tiers[i][2])
 				end
-				l[#l + 1] = table.concat({ Enc(id), Enc(math.max(0, now - (ladder.t or now)) / 60), ladder.full and "1" or "0", table.concat(tiers, "|") }, ":")
+				l[#l + 1] = table.concat({ Enc(id), Enc(math.max(0, now - (ladder.t or now)) / 60), (ladder.full and #ladder.tiers <= PACK_TIERS) and "1" or "0", table.concat(tiers, "|") }, ":")
 			end
 		end
 		for id, d in pairs(realm.mv or {}) do
