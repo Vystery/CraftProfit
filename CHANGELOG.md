@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.8
+
+- Fixed: Salt showed a vendor price of 5c; it costs 50c. The built-in vendor prices (used until you open a
+  vendor that sells the item) no longer beat Auction House prices, so a wrong one can no longer hide the price
+  from Auctionator, TSM or your own scan. Prices learned at a vendor still win when they are cheaper.
+- Fixed: the built-in Empty Vial price is now per vial (4c; the vendor sells 5 for 20c).
+- Fixed: vendor prices for items sold in bundles are no longer rounded to whole copper (7c for 5 is 1.4c each,
+  not 1c).
+
 ## 0.5.7
 
 - Fixed: on recipes with many reagents (most tailoring recipes: five to eight reagents in two columns) the

@@ -99,7 +99,8 @@ function CP:GetReagentCost(itemID)
 	self:Touch(itemID)
 	local def = Sources:Resolve()
 	local ah = def and SafeCall(def, "GetCostPrice", itemID) or nil
-	local vendor = self.Vendor:GetPrice(itemID)
+	local vendor, vendorKind = self.Vendor:GetPrice(itemID)
+	if vendorKind == "seed" and ah then vendor = nil end -- a seed never beats real price data
 	if vendor and (not ah or (self.settings.useVendorWhenCheaper and vendor < ah)) then
 		return DemoScale(vendor), "vendor"
 	end
@@ -129,7 +130,8 @@ function CP:GetReagentCostFor(itemID, quantity)
 				age = self:GetPriceAge(itemID) }
 		end
 	end
-	local vendor = self.Vendor:GetPrice(itemID)
+	local vendor, vendorKind = self.Vendor:GetPrice(itemID)
+	if vendorKind == "seed" and total then vendor = nil end -- a seed never beats real price data
 	if vendor and (not total or (self.settings.useVendorWhenCheaper and vendor * quantity <= total)) then
 		return DemoScale(vendor * quantity), DemoScale(vendor), "vendor",
 			{ source = "vendor", minPrice = vendor, covered = quantity, short = 0, full = true }

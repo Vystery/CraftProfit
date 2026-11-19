@@ -7,7 +7,8 @@ local _, CP = ...
 local Vendor = {}
 CP.Vendor = Vendor
 
--- itemID -> copper per unit. Approximate seed values; learned prices override them.
+-- itemID -> copper per unit. Approximate seed values: learned prices override them, and a seed is only used
+-- when no Auction House price exists (a wrong seed must never beat real price data).
 Vendor.seed = {
 	-- Tailoring / Leatherworking thread
 	[2320]  = 10,     -- Coarse Thread
@@ -29,7 +30,7 @@ Vendor.seed = {
 	[3466]  = 2000,   -- Strong Flux
 	[3857]  = 500,    -- Coal
 	-- Alchemy
-	[3371]  = 20,     -- Empty Vial
+	[3371]  = 4,      -- Empty Vial (20c for 5)
 	[3372]  = 200,    -- Leaded Vial
 	[8925]  = 2000,   -- Crystal Vial
 	-- Enchanting
@@ -41,7 +42,7 @@ Vendor.seed = {
 	[159]   = 25,     -- Refreshing Spring Water
 	[1179]  = 125,    -- Ice Cold Milk
 	-- Leatherworking
-	[4289]  = 5,      -- Salt
+	[4289]  = 50,     -- Salt
 	-- Engineering / Blacksmithing wood
 	[4470]  = 38,     -- Simple Wood
 }
@@ -83,7 +84,8 @@ local function ReadMerchantItem(index)
 	-- skip limited-stock items (numAvailable >= 0); unlimited stock is -1 or nil
 	if numAvailable and numAvailable >= 0 then return nil end
 	stack = (stack and stack > 0) and stack or 1
-	return itemID, math.floor(price / stack + 0.5)
+	-- kept unrounded: 7c for 5 is 1.4c each, and 1c for 5 must not round to 0
+	return itemID, price / stack
 end
 
 function Vendor:Learn()
