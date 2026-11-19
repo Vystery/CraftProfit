@@ -338,6 +338,7 @@ end
 local PANEL_MIN_HEIGHT = 62     -- title + net row: the smallest panel that still says something
 local PANEL_FLOOR = 8           -- how far the smallest panel may dip into the Track Recipe band (opts-less callers)
 local PANEL_STRIP_HEIGHT = 26   -- one line: net profit + Shop
+local PANEL_COMPLETE_HEIGHT = 138 -- all four stat rows + the checkboxes (LayoutPanel's showChecks); less docks
 local PANEL_DOCK_GAP = 6        -- gap to the profession window: its border reaches a few px past its edge
 local DOCK_TOP, DOCK_BOTTOM, DOCK_PAD = 30, 12, 14 -- docked window: title bar, bottom edge, side padding
 local DOCK_RIGHT_WIDTH = 300    -- docked to the right: the window's width
@@ -553,6 +554,8 @@ UI.DockFrame = DockFrame
 -- Create button): it is "full" when PANEL_MIN_HEIGHT fits, a one-line "strip" when only that fits, and
 -- otherwise "dock"ed under the profession window at the full design height (inside opts.dockFrame(p, form)
 -- when given: p is re-parented into it). The mode is returned and kept in p.cpMode. Without opts the old behaviour stays (the smallest panel may dip into the band).
+-- With opts.fullMin as well there is no strip: the panel stays "full" only when fullMin fits (everything it
+-- shows), and is docked otherwise.
 local function PlaceBelowContent(p, form, designHeight, opts)
 	local lowest, fr = ContentBottom(p, form)
 	if not lowest then
@@ -564,7 +567,12 @@ local function PlaceBelowContent(p, form, designHeight, opts)
 	local offset = (fr.top - lowest) / s + PANEL_GAP
 	local room = (fr.top - fr.bottom) / s - offset - PANEL_BOTTOM
 	local mode, height = "full", math.min(design, room)
-	if opts and opts.modes then
+	if opts and opts.modes and opts.fullMin then
+		-- all or nothing: below fullMin the panel would lose something, so it goes to its window whole
+		if room < opts.fullMin then
+			mode, height = "dock", design
+		end
+	elseif opts and opts.modes then
 		if room < PANEL_MIN_HEIGHT then
 			mode = room >= PANEL_STRIP_HEIGHT and "strip" or "dock"
 			height = mode == "strip" and PANEL_STRIP_HEIGHT or design
@@ -696,7 +704,7 @@ UI.SettlePanel = SettlePanel
 local function AnchorPanel(p, form)
 	local wasMode = p.cpMode
 	UI:PlaceSlotLines(form) -- reagents may have moved (ForeverRecipes re-lays them out after us)
-	if PlaceBelowContent(p, form, PANEL_HEIGHT, { modes = true, dockFrame = DockFrame, side = CP.settings.panelDock }) then
+	if PlaceBelowContent(p, form, PANEL_HEIGHT, { modes = true, fullMin = PANEL_COMPLETE_HEIGHT, dockFrame = DockFrame, side = CP.settings.panelDock }) then
 		p.cpStretch = false
 		p.cpAnchor = nil
 		-- strip <-> full at the same height does not fire OnSizeChanged

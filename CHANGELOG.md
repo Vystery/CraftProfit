@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.7
+
+- Fixed: on recipes with many reagents (most tailoring recipes: five to eight reagents in two columns) the
+  profit panel dropped its Sort by profit / Craft reagents / Vendor net checkboxes, and the CraftProfit window
+  next to the profession window never opened. Now the panel stays in the recipe pane only when all of it fits;
+  otherwise the whole panel opens in the CraftProfit window (below or right of the profession window, see
+  `/cf dock`). The one-line "net profit + Shop" strip is gone.
+
 ## 0.5.6
 
 - Fixed: the CraftProfit Scan button in the Auction House sat on top of AuctionMaster's "Full Scan" button and
