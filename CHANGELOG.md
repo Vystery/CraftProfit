@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.11
+
+- Fixed: prices seemed to be gone (no prices in tooltips, `/cf status` showing "on Unknown") when the game
+  did not give CraftProfit a realm name. Your saved prices were still there; CraftProfit was looking in an
+  empty set. It now picks your prices from ruleset and faction alone (for example `Normal-Horde`). Anything
+  you scanned while it said "Unknown" is merged in the next time you log in.
+- Fixed: a Lua error (`VendorPrices.lua:54: attempt to compare number with table`) when a saved vendor price
+  was not a plain number. Such an entry is now ignored until you visit a vendor that sells the item.
+
 ## 0.5.10
 
 - Changed: holding Shift over a stack (per-item prices / stack totals) now only rewrites CraftProfit's own

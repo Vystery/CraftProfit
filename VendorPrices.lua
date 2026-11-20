@@ -51,7 +51,9 @@ Vendor.seed = {
 function Vendor:GetPrice(itemID)
 	if not itemID then return nil end
 	local learned = CP.db and CP.db.vendor and CP.db.vendor[itemID]
-	if learned and learned > 0 then return learned, "learned" end
+	-- only a plain number counts: a saved file was reported holding a table here ({ 40, <time> }), which nothing
+	-- in CraftProfit writes; such an entry is ignored until a vendor visit replaces it (Learn)
+	if type(learned) == "number" and learned > 0 then return learned, "learned" end
 	local seed = self.seed[itemID]
 	if seed then return seed, "seed" end
 	return nil

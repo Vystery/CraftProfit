@@ -194,16 +194,15 @@ end
 -- Realm bucket key. GetNormalizedRealmName() can be nil early after login; then the plain realm name with
 -- spaces removed gives the same key ("Classic Beta PvP" -> "ClassicBetaPvP"), and the first good answer is
 -- kept so the key cannot change within a session.
-local realmKeyCache
 function CP:GetRealmKey()
-	if realmKeyCache then return realmKeyCache end
+	if self.realmKey then return self.realmKey end
 	local name = GetNormalizedRealmName and GetNormalizedRealmName()
 	if not name or name == "" then
 		local plain = GetRealmName and GetRealmName()
 		if plain and plain ~= "" then name = plain:gsub("[%s%-']", "") end
 	end
 	if not name or name == "" then return "Unknown" end
-	realmKeyCache = name
+	self.realmKey = name
 	return name
 end
 
@@ -245,8 +244,13 @@ end
 function CP:GetMarketKey()
 	if self.marketKey then return self.marketKey end
 	local realm, faction = self:GetRealmKey(), self:GetFaction()
-	if realm == "Unknown" or not faction then return realm end
-	self.marketKey = (self:GetRuleset() or realm) .. "-" .. faction
+	if not faction then return realm end
+	-- The realm name is only needed when the client names no ruleset. Some clients never give a realm name
+	-- (GetNormalizedRealmName and GetRealmName both empty, seen 2026-11-20): waiting for it there left every
+	-- price in an "Unknown" bucket and the saved "Normal-Horde" prices out of reach.
+	local ruleset = self:GetRuleset()
+	if not ruleset and realm == "Unknown" then return realm end
+	self.marketKey = (ruleset or realm) .. "-" .. faction
 	return self.marketKey
 end
 
