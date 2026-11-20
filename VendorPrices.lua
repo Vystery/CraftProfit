@@ -7,8 +7,9 @@ local _, CP = ...
 local Vendor = {}
 CP.Vendor = Vendor
 
--- itemID -> copper per unit. Approximate seed values: learned prices override them, and a seed is only used
--- when no Auction House price exists (a wrong seed must never beat real price data).
+-- itemID -> copper per unit, for items vendors sell with unlimited stock. Used until the player opens a vendor
+-- that sells the item (the learned price replaces it). Like a learned price, it beats the Auction House price
+-- when cheaper ("Use vendor price when cheaper"), so every value here must be the real per-unit price.
 Vendor.seed = {
 	-- Tailoring / Leatherworking thread
 	[2320]  = 10,     -- Coarse Thread

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.9
+
+- Fixed: "Use vendor price when cheaper" ignored the built-in vendor prices whenever an Auction House price
+  existed, so a reagent you had not yet seen at a vendor cost its AH price (Weak Flux 2s 15c instead of 1s).
+  Built-in prices now win when cheaper, the same as prices learned at a vendor. Learned prices are still per
+  unit (bundles divided by their size) and skip limited-stock and token-cost items.
+
 ## 0.5.8
 
 - Fixed: Salt showed a vendor price of 5c; it costs 50c. The built-in vendor prices (used until you open a
