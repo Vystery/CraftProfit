@@ -25,6 +25,23 @@ local function NodeData(node)
 	return node.data or node
 end
 
+-- Blizzard's gamepad UI crafts from a hold timer, not from the button press, and the client only allows
+-- that from untainted code. An addon that re-orders or trims Blizzard's recipe list taints the rows, then
+-- the recipe picked from them, then the craft: holding Create does nothing and the client reports
+-- "CraftProfit tried to call the protected function". So while the gamepad UI is on, the list is left
+-- exactly as Blizzard built it. Mouse and keyboard are not affected (a click is a hardware event).
+local function GamepadUI()
+	return (InputUtil and type(InputUtil.IsGamepadUIEnabled) == "function" and InputUtil.IsGamepadUIEnabled()) and true or false
+end
+UI.GamepadUI = GamepadUI
+
+local gamepadNoted
+local function NoteGamepad(what)
+	if gamepadNoted or not GamepadUI() then return end
+	gamepadNoted = true
+	CP:Print("%s is saved, but stays off while the gamepad UI is on: changing Blizzard's recipe list would stop hold-to-craft from working.", what)
+end
+
 local function Muted(text) return CP:Color(C.muted, text) end
 local function Body(text) return CP:Color(C.body, text) end
 local function Gray(text) return CP:Color(C.gray, text) end
@@ -701,8 +718,22 @@ local function SettlePanel(p, form, anchor)
 end
 UI.SettlePanel = SettlePanel
 
+-- Blizzard's gamepad navigation (SmartNavigation) treats every Button under the profession window as a place
+-- the D-pad can go, ours included: from the recipe list "down" then lands on the panel's checkboxes instead
+-- of the next recipe. SmartNavigation_MarkFrameIgnored is Blizzard's own switch for that (it uses it on
+-- Create and Create All); it covers the frame's children and is safe from addon code out of combat.
+-- The same choices stay reachable on a gamepad in the Filter menu and through /cf.
+local function SkipInGamepadNav(frame)
+	if not frame or frame.cpPadSkipped or type(SmartNavigation_MarkFrameIgnored) ~= "function" then return end
+	if InCombatLockdown and InCombatLockdown() then return end -- tried again the next time a recipe is shown
+	if pcall(SmartNavigation_MarkFrameIgnored, frame) then frame.cpPadSkipped = true end
+end
+UI.SkipInGamepadNav = SkipInGamepadNav
+
 local function AnchorPanel(p, form)
 	local wasMode = p.cpMode
+	SkipInGamepadNav(p)
+	SkipInGamepadNav(p.cpDock)
 	UI:PlaceSlotLines(form) -- reagents may have moved (ForeverRecipes re-lays them out after us)
 	if PlaceBelowContent(p, form, PANEL_HEIGHT, { modes = true, fullMin = PANEL_COMPLETE_HEIGHT, dockFrame = DockFrame, side = CP.settings.panelDock }) then
 		p.cpStretch = false
@@ -1272,7 +1303,7 @@ end
 -- Applies (or removes) the profit order on a recipe list data provider. Returns true when it re-sorted.
 function UI:ApplySort(dataProvider)
 	if not dataProvider or type(dataProvider.EnumerateEntireRange) ~= "function" then return false end
-	local want = CP.settings.sortByProfit and true or false
+	local want = CP.settings.sortByProfit and not GamepadUI() and true or false
 	local changed = false
 	local ok, err = pcall(function()
 		local nodes = {}
@@ -1313,6 +1344,7 @@ end
 function UI:SetSortByProfit(enabled)
 	CP.settings.sortByProfit = enabled and true or false
 	CP.touched.sortByProfit = true -- keep the choice if a late-loaded database is adopted
+	if enabled then NoteGamepad("Sort by profit") end
 	self:ResortList()
 	local form = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.SchematicForm
 	if form and form.cpPanel then form.cpPanel.SortCheck:SetChecked(CP.settings.sortByProfit) end
@@ -1403,7 +1435,7 @@ end
 -- Applies (or removes) the filter on a recipe list data provider. Returns true when the visible rows changed.
 function UI:ApplyFilter(dataProvider)
 	if not dataProvider then return false end
-	local want = CP.settings.profitableOnly and true or false
+	local want = CP.settings.profitableOnly and not GamepadUI() and true or false
 	if not want and hiddenFor ~= dataProvider then return false end
 	if type(dataProvider.GetRootNode) ~= "function" then return false end
 	local changed = false
@@ -1465,6 +1497,7 @@ end
 function UI:SetProfitableOnly(enabled)
 	CP.settings.profitableOnly = enabled and true or false
 	CP.touched.profitableOnly = true -- keep the choice if a late-loaded database is adopted
+	if enabled then NoteGamepad("Profitable only") end
 	self:RefilterList()
 	CP:Fire("FILTER_CHANGED", CP.settings.profitableOnly)
 end
