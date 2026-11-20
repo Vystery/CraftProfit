@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.10
+
+- Changed: holding Shift over a stack (per-item prices / stack totals) now only rewrites CraftProfit's own
+  tooltip lines instead of asking the game to rebuild the whole tooltip. The rebuild is the likely cause of
+  the "CraftProfit tried to call the protected function SetPreferredGamepadInteractTarget()" error reported
+  when opening a gamepad radial. The tooltip looks the same as before.
+- If the game still blocks an action and names CraftProfit, please send what `/cf blocked` prints.
+
 ## 0.5.9
 
 - Fixed: "Use vendor price when cheaper" ignored the built-in vendor prices whenever an Auction House price

@@ -187,19 +187,34 @@ end
 
 local function ShiftDown() return type(IsShiftKeyDown) == "function" and IsShiftKeyDown() and true or false end
 
+-- The block's lines for a stack: the stack header first while Shift is held, the Shift hint last otherwise.
+-- Both forms have the same number of lines, so Shift can rewrite the block in place (see OnModifier).
+function Tooltip:BlockLines(itemID, stack, shift)
+	local lines = self:Lines(itemID, shift and stack or nil)
+	if not lines or #lines == 0 then return nil end
+	if stack and not shift then lines[#lines + 1] = { "Stack of " .. stack, "Shift: totals", true } end
+	return lines
+end
+
+local HEADER = "CraftProfit"
+
 function Tooltip:AddLines(tooltip, itemID, data)
-	if tooltip == GameTooltip then self.stackShown = nil end -- nothing below may leave an older stack behind
+	-- nothing below may leave an older stack behind
+	if tooltip == GameTooltip then self.stackShown, self.block = nil, nil end
 	if not (CP.settings and CP.settings.tooltip) then return end
 	if self:IsUnsellable(itemID, tooltip, data) then return end
 	local stack = self:StackCount(tooltip, data, itemID)
 	if not (stack and stack > 1) then stack = nil end
 	if tooltip == GameTooltip then self.stackShown = stack end -- Shift re-draws only tooltips with a stack
-	local shift = stack and ShiftDown()
-	local lines = self:Lines(itemID, shift and stack or nil)
-	if not lines or #lines == 0 then return end
-	if stack and not shift then lines[#lines + 1] = { "Stack of " .. stack, "Shift: totals", true } end
+	local lines = self:BlockLines(itemID, stack, stack and ShiftDown())
+	if not lines then return end
 	tooltip:AddLine(" ")
-	tooltip:AddLine("CraftProfit", 1, 0.82, 0)
+	tooltip:AddLine(HEADER, 1, 0.82, 0)
+	-- where the block sits in the tooltip, for the Shift re-draw
+	if stack and tooltip == GameTooltip and type(tooltip.NumLines) == "function" then
+		local ok, n = pcall(tooltip.NumLines, tooltip)
+		if ok and type(n) == "number" then self.block = { itemID = itemID, stack = stack, header = n, count = #lines } end
+	end
 	for _, l in ipairs(lines) do
 		if l[3] then
 			tooltip:AddDoubleLine(l[1], l[2], 0.8, 0.8, 0.8, 0.6, 0.6, 0.6)
@@ -239,7 +254,7 @@ function Tooltip:Install()
 	-- the stack belongs to the tooltip's current contents: forget it when they are cleared (the tooltip moves
 	-- on to a unit, a spell, another item) or the tooltip hides
 	if GameTooltip and type(GameTooltip.HookScript) == "function" then
-		local forget = function() Tooltip.stackShown = nil end
+		local forget = function() Tooltip.stackShown, Tooltip.block = nil, nil end
 		pcall(GameTooltip.HookScript, GameTooltip, "OnTooltipCleared", forget)
 		pcall(GameTooltip.HookScript, GameTooltip, "OnHide", forget)
 	end
@@ -266,25 +281,49 @@ function Tooltip:Install()
 	end
 end
 
--- Pressing or releasing Shift over a stack re-draws the tooltip with per-item or stack totals.
+-- Pressing or releasing Shift over a stack switches the block between per-item prices and stack totals.
+-- Only CraftProfit's own lines are rewritten, in place. Asking the tooltip to rebuild itself (RefreshData, or
+-- the owner's OnEnter) would run Blizzard's code on CraftProfit's behalf; whatever that code stores is then
+-- tainted, and a protected call that reads it later is blocked with CraftProfit named (reported with
+-- SetPreferredGamepadInteractTarget when a gamepad radial opened).
+function Tooltip:RewriteBlock()
+	local b = self.block
+	local name = b and type(GameTooltip.GetName) == "function" and GameTooltip:GetName()
+	if not name then return false end
+	local lines = self:BlockLines(b.itemID, b.stack, ShiftDown())
+	if not lines or #lines ~= b.count then return false end -- prices changed since it was drawn: leave it
+	local header = _G[name .. "TextLeft" .. b.header]
+	if not (header and header:GetText() == HEADER) then return false end
+	local rows = {}
+	for i = 1, b.count do
+		local left, right = _G[name .. "TextLeft" .. (b.header + i)], _G[name .. "TextRight" .. (b.header + i)]
+		if not (left and right) then return false end
+		rows[i] = { left, right }
+	end
+	for i, l in ipairs(lines) do
+		local left, right = rows[i][1], rows[i][2]
+		left:SetText(l[1])
+		right:SetText(l[2])
+		if l[3] then right:SetTextColor(0.6, 0.6, 0.6) else right:SetTextColor(1, 1, 1) end
+	end
+	GameTooltip:Show() -- fits the tooltip to the new text widths
+	return true
+end
+
 function Tooltip:OnModifier(key)
 	if key ~= "LSHIFT" and key ~= "RSHIFT" then return end
 	if not (CP.settings and CP.settings.tooltip) then return end
-	if not (self.stackShown and GameTooltip and GameTooltip:IsShown()) then return end
-	-- Re-drawing anything but an item from addon code is an error on this client (unit tooltips read secret
-	-- values), so the tooltip must hold an item now, whatever it held when the stack was noted.
+	if not (self.stackShown and self.block and GameTooltip and GameTooltip:IsShown()) then return end
+	-- the tooltip must hold an item now, whatever it held when the stack was noted (unit tooltips hold
+	-- secret values on this client)
 	if not self:ShowsItem(GameTooltip) then
-		self.stackShown = nil
+		self.stackShown, self.block = nil, nil
 		return
 	end
-	self.lastRefresh = GetTime and GetTime() or nil -- Blocked.lua reports how long before a blocked action this ran
-	if type(GameTooltip.RefreshData) == "function" then
-		pcall(GameTooltip.RefreshData, GameTooltip)
-		return
+	local ok, done = pcall(self.RewriteBlock, self)
+	if ok and done then
+		self.lastRefresh = GetTime and GetTime() or nil -- Blocked.lua reports how long before a blocked action this ran
 	end
-	local owner = type(GameTooltip.GetOwner) == "function" and GameTooltip:GetOwner()
-	local onEnter = owner and type(owner.GetScript) == "function" and owner:GetScript("OnEnter")
-	if onEnter then pcall(onEnter, owner) end
 end
 
 CP:RegisterEvent("PLAYER_LOGIN", function() Tooltip:Install() end)
