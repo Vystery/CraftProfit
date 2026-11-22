@@ -94,7 +94,7 @@ The older `/cp` still works for every command.
 /cf basis min|market sale price from your scans: lowest buyout, or market (depth value, else median of recent scans)
 /cf tooltip          toggle the tooltip block
 /cf shop [clear]     show (or empty) the AH shopping list
-/cf blocked [clear]  what was on screen when the game blocked an action and named CraftProfit (for bug reports)
+/cf blocked [clear]  what was on screen when the game blocked an action and named CraftProfit, in a window you can copy from (for bug reports)
 /cf share [import]   state of the old cross-character cache (import: merge it again)
 /cf reset confirm    wipe all scan data and settings
 ```

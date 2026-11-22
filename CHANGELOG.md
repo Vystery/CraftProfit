@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.12
+
+This version does not fix the "CraftProfit has been blocked" error some players get when using an item from
+their bags. It makes the error much easier to report, so it can be found.
+
+- New: `/cf blocked` opens a window with the records as text you can copy (Ctrl+C) and paste into a report, so
+  nothing has to be typed off the chat.
+- New: each record now also says what the game was running when it blocked the action (the call stack).
+- If you get the error, please type `/cf blocked` and send what the window shows. A `/reload` clears the error
+  until it happens again.
+
 ## 0.5.11
 
 - Fixed: prices seemed to be gone (no prices in tooltips, `/cf status` showing "on Unknown") when the game
