@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.15
+
+- Changed: with **Profitable only** on and no price known yet (no Auction House scan), the recipe list no
+  longer looks blank: it says that prices are missing and how to get them (scan at the Auction House, or
+  `/cf profit` to turn the filter off). When prices are known but nothing makes a profit, it says that.
+- Changed: blocked-action records (`/cf blocked` and the reports to the author) now say what actually points
+  at the cause. Fields CraftProfit wrote come first, then those the bag-click reads; another addon's own frames
+  are listed once instead of field by field; the count per addon is kept. The record also lists global
+  variables CraftProfit wrote, which windows were opened earlier in the session (and when), and whether Sort
+  by profit and Profitable only were on. The 0.5.14 reports of blocked item use were filled with Auctionator's
+  fields and said nothing about CraftProfit.
+
 ## 0.5.14
 
 - New: CraftProfit tells you when a newer version is out. It hears it from guild and group members who

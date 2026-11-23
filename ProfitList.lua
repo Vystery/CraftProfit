@@ -78,6 +78,7 @@ function List:Emit(node, depth)
 		if d and d.recipeInfo and d.recipeInfo.recipeID and not d.categoryInfo then
 			had = true
 			local net = UI:GetNet(d.recipeInfo.recipeID)
+			if net ~= nil then self.priced = (self.priced or 0) + 1 end
 			-- profitable only: a loss, break-even or unknown result is not shown as profitable
 			if not (only and (net == nil or net <= 0)) then
 				recipes[#recipes + 1] = { kind = "recipe", recipeID = d.recipeInfo.recipeID, info = d.recipeInfo, net = net,
@@ -169,6 +170,7 @@ local function Recipes(items, set, first)
 end
 
 function List:Build(dataProvider)
+	self.priced = 0 -- recipes with a known profit, counted while reading Blizzard's list
 	self.tree = self:BuildTree(dataProvider)
 	self.recipeSet = {}
 	self.firstRecipe = Recipes(self.tree, self.recipeSet, nil)
@@ -485,9 +487,11 @@ function List:Ensure()
 	f:SetScript("OnSizeChanged", function() List:Draw() end)
 	f.Rows = {}
 
-	f.Empty = f:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-	f.Empty:SetPoint("TOP", f, "TOP", 0, -30)
-	f.Empty:SetText("No recipe with a profit.")
+	f.Empty = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	f.Empty:SetPoint("TOP", f, "TOP", 0, -40)
+	f.Empty:SetWidth(220)
+	f.Empty:SetJustifyH("CENTER")
+	Call(f.Empty, "SetWordWrap", true)
 	f.Empty:Hide()
 
 	-- our own scroll bar in the place of Blizzard's
@@ -615,6 +619,25 @@ local function DrawRow(row, r, selected)
 	if selected then row.Selected:Show() end
 end
 
+-- Why the list is empty. "Profitable only" with no price known for any recipe hides them all: that is a missing
+-- Auction House scan, not a profession without profit, and the text says how to get prices.
+List.EMPTY_NO_PRICES = "No prices yet, so no recipe can be shown as profitable.\n\nScan the Auction House (the CraftProfit Scan button there, or /cf scan), or turn off Profitable only (/cf profit)."
+List.EMPTY_NO_PROFIT = "No recipe makes a profit at the current prices.\n\nTurn off Profitable only (/cf profit) to see them all."
+
+function List:EmptyText()
+	if #self.rows > 0 then return nil end
+	if CP.settings.profitableOnly and (self.priced or 0) == 0 then return self.EMPTY_NO_PRICES end
+	return self.EMPTY_NO_PROFIT
+end
+
+function List:ShowEmpty()
+	local f = self.frame
+	if not f then return end
+	local text = self:EmptyText()
+	if text then f.Empty:SetText(text) end
+	f.Empty:SetShown(text ~= nil)
+end
+
 function List:Draw()
 	local f = self.frame
 	if not f or not f:IsShown() then return end
@@ -622,7 +645,7 @@ function List:Draw()
 		-- Blizzard's scroll box draws the rows; only the selection can have changed
 		for _, row in ipairs(f.Rows) do row:Hide() end
 		if f.Bar then f.Bar:Hide() end
-		f.Empty:SetShown(#self.rows == 0)
+		self:ShowEmpty()
 		self:NativeSelection()
 		return
 	end
@@ -649,7 +672,7 @@ function List:Draw()
 		end
 	end
 	for i = visible + 1, #f.Rows do f.Rows[i]:Hide() end
-	f.Empty:SetShown(#rows == 0)
+	self:ShowEmpty()
 
 	if f.Bar then
 		self.settingBar = true

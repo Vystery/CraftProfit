@@ -54,7 +54,35 @@ function Blocked:Context()
 		if Try(function() local f = _G[w[1]]; return f and f.IsShown and f:IsShown() end) then open[#open + 1] = w[2] end
 	end
 	if #open > 0 then c.open = table.concat(open, ", ") end
+	c.seen = self:Seen()
+	local s = CP.settings or {}
+	c.list = string.format("sort %s, profitable only %s", s.sortByProfit and "on" or "off", s.profitableOnly and "on" or "off")
 	return c
+end
+
+-- Windows opened earlier this session, with the time each was last opened: taint from a window lasts
+-- after it closes (the bank's bankType stayed tainted until a reload), so what is open now is not enough.
+Blocked.opened = {}
+local OPEN_EVENTS = {
+	{ "TRADE_SKILL_SHOW", "professions" }, { "BANKFRAME_OPENED", "bank" }, { "MERCHANT_SHOW", "merchant" },
+	{ "AUCTION_HOUSE_SHOW", "auction house" }, { "MAIL_SHOW", "mail" }, { "TRAINER_SHOW", "trainer" },
+	{ "TRADE_SHOW", "trade" }, { "GUILDBANKFRAME_OPENED", "guild bank" },
+}
+for _, e in ipairs(OPEN_EVENTS) do
+	CP:RegisterEvent(e[1], function() Blocked.opened[e[2]] = time() end)
+end
+
+function Blocked:Seen()
+	local list = {}
+	for _, e in ipairs(OPEN_EVENTS) do
+		local t = self.opened[e[2]]
+		if t then list[#list + 1] = { e[2], t } end
+	end
+	if #list == 0 then return nil end
+	table.sort(list, function(a, b) return a[2] < b[2] end)
+	local out = {}
+	for i, v in ipairs(list) do out[i] = v[1] .. " " .. (fmtDate and fmtDate("%H:%M", v[2]) or tostring(v[2])) end
+	return table.concat(out, ", ")
 end
 
 -- The code that was running when the call was refused: the game raises the event from inside the blocked
@@ -119,6 +147,8 @@ function Blocked:Line(rec)
 	end
 	parts[#parts + 1] = rec.shiftAgo and ("Shift re-draw " .. rec.shiftAgo .. "s before") or "no Shift re-draw this session"
 	parts[#parts + 1] = "open: " .. (rec.open or "nothing")
+	if rec.seen then parts[#parts + 1] = "opened this session: " .. rec.seen end
+	if rec.list then parts[#parts + 1] = rec.list end
 	return table.concat(parts, " | ")
 end
 
@@ -231,7 +261,9 @@ local TAINT_ROOTS = {
 }
 local TAINT_DEPTH, TAINT_FIELDS, TAINT_LINES = 3, 60000, 300
 
-function Blocked:TaintReport()
+-- maxLines: how many field lines to keep (default TAINT_LINES); the counts in the first line cover all of them
+function Blocked:TaintReport(maxLines)
+	maxLines = maxLines or TAINT_LINES
 	local check = issecurevariable
 	if type(check) ~= "function" then return nil, "this client has no issecurevariable()" end
 	-- seen: per root, so each root is walked to its own depth; checked: a table's fields are reported once
@@ -253,7 +285,7 @@ function Blocked:TaintReport()
 			if ok2 and not secure then
 				who = Plain(who) or "?"
 				counts[who] = (counts[who] or 0) + 1
-				if #found < TAINT_LINES then found[#found + 1] = string.format("%s.%s  <- %s", path, tostring(k), who) end
+				if #found < maxLines then found[#found + 1] = string.format("%s.%s  <- %s", path, tostring(k), who) end
 			end
 			if depth < TAINT_DEPTH then
 				local ok3, v = pcall(rawget, tbl, k)
@@ -327,21 +359,82 @@ end
 
 -- For a record: which fields that are not CraftProfit's own the game counts as addon-written at that moment
 -- (the cause of a block is among them), in a few lines. nil when the client cannot say or there are none.
-local SUMMARY_LINES, SUMMARY_CHARS = 20, 1200
+local SUMMARY_LINES, SUMMARY_CHARS, SUMMARY_SCAN = 20, 1400, 5000
+
+-- Fields the bag-button click reads on its way to UseContainerItem (and the profession form the bag buttons
+-- look at): a non-secure value here is what blocks item use, so these come right after CraftProfit's own.
+local CLICK_PATH = { "BankFrame", "ItemButtonUtil", "MerchantFrame", "ContainerFrameCombinedBags", "StackSplitFrame",
+	"SchematicForm.currentRecipeInfo", "SchematicForm.transaction" }
+
+local function Rank(path, who)
+	if who == ADDON_NAME then return 0 end
+	for _, p in ipairs(CLICK_PATH) do
+		if path:sub(1, #p) == p then return 1 end
+	end
+	return 2
+end
+
+-- Global variables the game counts as written by CraftProfit, other than its own (CraftProfit*, SLASH_*).
+-- Blizzard code that runs on behalf of an addon frame writes with that addon's taint, and a global read on
+-- the way to a protected call blocks it; the field walk above never sees those. nil when there are none.
+local GLOBAL_KEYS, GLOBAL_LIST = 200000, 12
+
+function Blocked:GlobalTaint()
+	local check = issecurevariable
+	if type(check) ~= "function" then return nil end
+	local names, n = {}, 0
+	local ok = pcall(function()
+		for k in pairs(_G) do
+			n = n + 1
+			if n > GLOBAL_KEYS then break end
+			if type(k) == "string" and not k:find("^CraftProfit") and not k:find("^SLASH_CRAFTPROFIT") then
+				local ok2, secure, who = pcall(check, k)
+				if ok2 and not secure and who == ADDON_NAME then names[#names + 1] = k end
+			end
+		end
+	end)
+	if not ok or #names == 0 then return nil end
+	table.sort(names)
+	local more = #names - GLOBAL_LIST
+	if more > 0 then for i = #names, GLOBAL_LIST + 1, -1 do names[i] = nil end end
+	return table.concat(names, ", ") .. (more > 0 and string.format(" (and %d more)", more) or "")
+end
 
 function Blocked:TaintSummary()
-	local ok, text = pcall(self.TaintReport, self)
+	local ok, text = pcall(self.TaintReport, self, SUMMARY_SCAN)
 	if not ok or type(text) ~= "string" then return nil end
-	local lines, more = {}, 0
+	local head = text:match("^[^\n]*") or ""
+	local counts = head:match("written by an addon: (.*)$")
+	local entries, owned = {}, {}
 	for line in text:gmatch("[^\n]+") do
+		local path, who = line:match("^(.-)  <%- (.*)$")
 		-- cpPanel and other cp* / cs* fields are our own (and the companion addon's) widgets
-		if line:find("  <- ", 1, true) and not line:find("%.c[ps]%u") then
-			if #lines < SUMMARY_LINES then lines[#lines + 1] = line else more = more + 1 end
+		if path and not path:find("%.c[ps]%u") then
+			-- a field another addon added (AuctionHouseFrame.AuctionatorConfigFrame) is its own frame: list
+			-- the field once, not everything inside it. Lines are sorted, so a parent comes before its children.
+			local parent = path:match("^(.*)%.[^.]+$")
+			local inside = false
+			while parent do
+				if owned[parent] == who then inside = true break end
+				parent = parent:match("^(.*)%.[^.]+$")
+			end
+			if not inside then
+				owned[path] = who
+				entries[#entries + 1] = { line = line, rank = Rank(path, who), i = #entries }
+			end
 		end
 	end
-	if #lines == 0 then return nil end
-	local out = "addon-written fields: " .. table.concat(lines, "\n")
-	if more > 0 then out = out .. string.format("\n(and %d more)", more) end
+	table.sort(entries, function(a, b)
+		if a.rank ~= b.rank then return a.rank < b.rank end
+		return a.i < b.i
+	end)
+	local lines = {}
+	for i = 1, math.min(#entries, SUMMARY_LINES) do lines[i] = entries[i].line end
+	local globals = self:GlobalTaint()
+	if #lines == 0 and not globals then return nil end
+	local out = "addon-written fields (" .. (counts or "none") .. "):" .. (#lines > 0 and ("\n" .. table.concat(lines, "\n")) or "")
+	if globals then out = "globals written by CraftProfit: " .. globals .. "\n" .. out end
+	if #entries > #lines then out = out .. string.format("\n(and %d more)", #entries - #lines) end
 	if #out > SUMMARY_CHARS then out = out:sub(1, SUMMARY_CHARS) .. "..." end
 	return out
 end
