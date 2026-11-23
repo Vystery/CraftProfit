@@ -3,7 +3,7 @@
 ## Notes: Craft cost and profit for every recipe, directly in the profession window. Price sources: own AH scan, Auctionator, TSM.
 ## Author: Vystery
 ## X-License: All Rights Reserved
-## Version: 0.5.12
+## Version: 0.5.13
 ## SavedVariables: CraftProfitDB
 ## SavedVariablesPerCharacter: CraftProfitCharDB
 ## OptionalDeps: Auctionator, TradeSkillMaster
@@ -19,6 +19,7 @@ Tooltip.lua
 Blocked.lua
 Calculator.lua
 ProfessionUI.lua
+ProfitList.lua
 Shopping.lua
 Trainer.lua
 Options.lua

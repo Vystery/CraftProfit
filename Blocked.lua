@@ -198,9 +198,136 @@ function Blocked:ShowCopy(text)
 	Call(f.Edit, "HighlightText")
 end
 
+-- /cf blocked taint: which fields of the default UI's windows the game currently counts as written by an
+-- addon, and by which one. Reading such a field is what makes the game block a later protected action, so
+-- this shows where a block comes from before it happens. Only reads; nothing is changed.
+local TAINT_ROOTS = {
+	{ "ProfessionsFrame", function() return ProfessionsFrame end },
+	{ "ProfessionsFrame.CraftingPage", function() return ProfessionsFrame.CraftingPage end },
+	{ "CraftingPage.SchematicForm", function() return ProfessionsFrame.CraftingPage.SchematicForm end },
+	{ "SchematicForm.currentRecipeInfo", function() return ProfessionsFrame.CraftingPage.SchematicForm.currentRecipeInfo end },
+	{ "SchematicForm.transaction", function() return ProfessionsFrame.CraftingPage.SchematicForm.transaction end },
+	{ "CraftingPage.RecipeList", function() return ProfessionsFrame.CraftingPage.RecipeList end },
+	{ "RecipeList.ScrollBox", function() return ProfessionsFrame.CraftingPage.RecipeList.ScrollBox end },
+	{ "BankFrame", function() return BankFrame end },
+	{ "BankFrame.BankPanel", function() return BankFrame.BankPanel end },
+	{ "ContainerFrameCombinedBags", function() return ContainerFrameCombinedBags end },
+	{ "MerchantFrame", function() return MerchantFrame end },
+	{ "AuctionHouseFrame", function() return AuctionHouseFrame end },
+	{ "ItemButtonUtil", function() return ItemButtonUtil end },
+	{ "UIParent", function() return UIParent end },
+}
+local TAINT_DEPTH, TAINT_FIELDS, TAINT_LINES = 3, 60000, 300
+
+function Blocked:TaintReport()
+	local check = issecurevariable
+	if type(check) ~= "function" then return nil, "this client has no issecurevariable()" end
+	-- seen: per root, so each root is walked to its own depth; checked: a table's fields are reported once
+	local seen, checked, found, counts, fields = {}, {}, {}, {}, 0
+	local function Walk(tbl, path, depth)
+		if seen[tbl] or fields > TAINT_FIELDS then return end
+		seen[tbl] = true
+		local keys = {}
+		local ok = pcall(function() for k in pairs(tbl) do keys[#keys + 1] = k end end)
+		if not ok then return end
+		local first = not checked[tbl]
+		checked[tbl] = true
+		for _, k in ipairs(keys) do
+			local ok2, secure, who = true, true, nil
+			if first then
+				fields = fields + 1
+				ok2, secure, who = pcall(check, tbl, k)
+			end
+			if ok2 and not secure then
+				who = Plain(who) or "?"
+				counts[who] = (counts[who] or 0) + 1
+				if #found < TAINT_LINES then found[#found + 1] = string.format("%s.%s  <- %s", path, tostring(k), who) end
+			end
+			if depth < TAINT_DEPTH then
+				local ok3, v = pcall(rawget, tbl, k)
+				if ok3 and type(v) == "table" and type(k) == "string" then Walk(v, path .. "." .. k, depth + 1) end
+			end
+		end
+	end
+	for _, root in ipairs(TAINT_ROOTS) do
+		local tbl = Try(root[2])
+		if type(tbl) == "table" then
+			seen = {}
+			Walk(tbl, root[1], 1)
+		end
+	end
+	local who = {}
+	for name, n in pairs(counts) do who[#who + 1] = string.format("%s %d", name, n) end
+	table.sort(who)
+	local head = string.format("%s v%s: %d fields checked, written by an addon: %s",
+		fmtDate and fmtDate("%Y-%m-%d %H:%M:%S") or "", tostring(CP.version), fields, #who > 0 and table.concat(who, ", ") or "none")
+	table.sort(found)
+	return head .. (#found > 0 and ("\n" .. table.concat(found, "\n")) or "")
+end
+
+-- /cf blocked watch: repeats the check twice a second and says in chat the moment a field becomes
+-- addon-written, with the windows open at that time. Off again with the same command or a reload.
+function Blocked:Watch()
+	if self.watch then
+		self.watch:Cancel()
+		self.watch = nil
+		CP:Print("taint watch off.")
+		-- everything it saw, in order, as text to copy
+		if self.watchLog and #self.watchLog > 0 then
+			pcall(self.ShowCopy, self, table.concat(self.watchLog, "\n\n"))
+		end
+		self.watchLog = nil
+		return
+	end
+	if not (C_Timer and C_Timer.NewTicker) then CP:Print("taint watch not possible on this client.") return end
+	local function Lines()
+		local text = self:TaintReport()
+		local set = {}
+		if text then
+			for line in text:gmatch("[^\n]+") do
+				if line:find("  <- ", 1, true) then set[line] = true end
+			end
+		end
+		return set
+	end
+	local known = Lines()
+	self.watch = C_Timer.NewTicker(0.5, function()
+		local ok, now = pcall(Lines)
+		if not ok then return end
+		-- a rebuild taints hundreds of fields at once: the first few (sorted) say what ran, the rest is a count
+		local fresh = {}
+		for line in pairs(now) do
+			if not known[line] then
+				known[line] = true
+				fresh[#fresh + 1] = line
+			end
+		end
+		if #fresh == 0 then return end
+		table.sort(fresh)
+		CP:Print("taint watch %s: %d new | open: %s", fmtDate and fmtDate("%H:%M:%S") or "", #fresh, self:Context().open or "nothing")
+		for i = 1, math.min(#fresh, 12) do CP:Print("  %s", fresh[i]) end
+		self.watchLog = self.watchLog or {}
+		self.watchLog[#self.watchLog + 1] = string.format("%s: %d new | open: %s\n%s", fmtDate and fmtDate("%H:%M:%S") or "", #fresh,
+			self:Context().open or "nothing", table.concat(fresh, "\n"))
+	end)
+	CP:Print("taint watch on: new addon-written fields are reported here as they appear. /cf blocked watch turns it off.")
+end
+
 function Blocked:Command(rest)
 	local db = CP.db
 	local list = db and db.blocked or {}
+	if (rest or ""):lower() == "watch" then return self:Watch() end
+	if (rest or ""):lower() == "taint" then
+		local text, err = self:TaintReport()
+		if not text then
+			CP:Print("taint check not possible: %s", tostring(err))
+			return
+		end
+		CP:Print("%s", (text:match("^[^\n]*")))
+		local ok, err2 = pcall(self.ShowCopy, self, text)
+		if not ok then CP:Debug("taint window failed: %s", tostring(err2)) end
+		return
+	end
 	if (rest or ""):lower() == "clear" then
 		if db then db.blocked = nil end
 		if self.copyFrame then self.copyFrame:Hide() end

@@ -3,8 +3,8 @@
 --   * profit tag + margin on every recipe row
 --   * unit price / line total under every reagent
 --   * "Profit (Auction House):" (or "(Vendor):", per the netBasis setting) section in the recipe details
---   * optional sort-by-profit within categories (Filter dropdown, panel checkbox, /cf sort); see "Sort by profit"
---   * optional profitable-only filter (Filter dropdown, options, /cf profit); see "Profitable only"
+--   * optional sort-by-profit within categories (Filter dropdown, panel checkbox, /cf sort): ProfitList.lua
+--   * optional profitable-only filter (Filter dropdown, options, /cf profit): ProfitList.lua
 
 local _, CP = ...
 local UI = {}
@@ -1232,240 +1232,35 @@ function UI:ReinitForm()
 end
 
 ---------------------------------------------------------------------------
--- Sort by profit
+-- Sort by profit / Profitable only
 ---------------------------------------------------------------------------
 
--- How it stays out of the default UI's way:
---   * Only the sort comparator of category nodes is swapped, through the tree node's own SetSortComparator
---     (the same call Blizzard uses when it builds the list). Nothing is inserted, removed or re-parented, so
---     categories, favorites, the unlearned divider, padding rows and collapse state are untouched.
---   * Within a category only recipe rows that both have a profit are reordered (highest net first, recipes
---     without a price after them). Every other comparison, and every tie, is answered by Blizzard's own
---     comparator, so headers and unpriced recipes keep the default order.
---   * Turning it off puts Blizzard's comparator back on the same nodes; the next list Blizzard builds (search,
---     filter, new profession) uses its own order anyway.
---   * We never call Blizzard's page or list Init; the current list is re-sorted in place.
--- The tree caches its flattened row list; node:Sort() does not clear that cache (TreeListDataProvider.lua),
--- so after sorting the provider is invalidated, which is what makes the ScrollBox show the new order.
+-- Both are shown by ProfitList.lua: a list of our own, drawn in the place of Blizzard's recipe list and built
+-- from it by reading only. Blizzard's list itself is never sorted, filtered or refreshed from here: whatever
+-- an addon writes into it is marked addon-written by the game, the profession window spreads that mark to
+-- everything it sets up next, and protected actions that later read such a value are blocked (0.5.11:
+-- UseContainerItem after the bank was opened next to the profession window).
 
-local blizzardSort -- Blizzard's comparator for category nodes (SortCategoryData), captured from the list
-
-local function ProfitComparator(lhs, rhs)
-	local a, b = NodeData(lhs), NodeData(rhs)
-	local ar, br = a and a.recipeInfo, b and b.recipeInfo
-	if ar and br and not a.categoryInfo and not b.categoryInfo and (a.order or 0) == (b.order or 0) then
-		local pa, pb = UI:GetNet(ar.recipeID), UI:GetNet(br.recipeID)
-		if pa ~= pb then
-			if pa == nil then return false end
-			if pb == nil then return true end
-			return pa > pb
-		end
-	end
-	if blizzardSort then return blizzardSort(lhs, rhs) end
-	-- no Blizzard comparator seen (should not happen): categories first, then padding order, then name
-	if (a and a.categoryInfo) or (b and b.categoryInfo) then return (a and a.categoryInfo and not (b and b.categoryInfo)) and true or false end
-	local ao, bo = a and a.order or 0, b and b.order or 0
-	if ao ~= bo then return ao < bo end
-	return strcmputf8i((ar and ar.name) or "", (br and br.name) or "") < 0
-end
-
--- Applies (or removes) the profit order on a recipe list data provider. Returns true when it re-sorted.
-function UI:ApplySort(dataProvider)
-	if not dataProvider or type(dataProvider.EnumerateEntireRange) ~= "function" then return false end
-	local want = CP.settings.sortByProfit and true or false
-	local changed = false
-	local ok, err = pcall(function()
-		local nodes = {}
-		for _, node in dataProvider:EnumerateEntireRange() do
-			local d = NodeData(node)
-			if d and d.categoryInfo and type(node.SetSortComparator) == "function" then
-				table.insert(nodes, node)
-				local current = node.sortComparator
-				if current and current ~= ProfitComparator then blizzardSort = current end
-			end
-		end
-		for _, node in ipairs(nodes) do
-			if want then
-				node:SetSortComparator(ProfitComparator, false, false) -- also re-sorts with fresh prices
-				changed = true
-			elseif node.sortComparator == ProfitComparator and blizzardSort then
-				node:SetSortComparator(blizzardSort, false, false)
-				changed = true
-			end
-		end
-	end)
-	if not ok then CP:Debug("sort failed: %s", tostring(err)) end
-	if changed and type(dataProvider.Invalidate) == "function" then
-		local ok2, err2 = pcall(dataProvider.Invalidate, dataProvider)
-		if not ok2 then CP:Debug("sort refresh failed: %s", tostring(err2)) end
-	end
-	return changed
-end
-
--- Re-sorts the list that is on screen (no rebuild).
-function UI:ResortList()
-	local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
-	local scrollBox = page and page.RecipeList and page.RecipeList.ScrollBox
-	if not scrollBox or type(scrollBox.GetDataProvider) ~= "function" then return false end
-	return self:ApplySort(scrollBox:GetDataProvider())
+-- Rebuilds our list from the one on screen (or hides it when both options are off).
+function UI:RefreshProfitList(dataProvider)
+	local list = self.ProfitList
+	if not list then return false end
+	return list:Refresh(dataProvider)
 end
 
 function UI:SetSortByProfit(enabled)
 	CP.settings.sortByProfit = enabled and true or false
 	CP.touched.sortByProfit = true -- keep the choice if a late-loaded database is adopted
-	self:ResortList()
+	self:RefreshProfitList()
 	local form = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.SchematicForm
 	if form and form.cpPanel then form.cpPanel.SortCheck:SetChecked(CP.settings.sortByProfit) end
 	CP:Fire("SORT_CHANGED", CP.settings.sortByProfit)
 end
 
----------------------------------------------------------------------------
--- Profitable only
----------------------------------------------------------------------------
-
--- Shows only recipes with a known net above zero (the one the row tag shows):
---   * Recipe rows that lose or break even are hidden, and so are recipes without a net (a reagent or the
---     output has no price, or nothing sellable is made): an unknown result is not shown as profitable.
---   * Rows are taken out of the list Blizzard built with the tree's own node:Remove (no invalidation per
---     node; the provider is invalidated once at the end). A category left without recipes also loses its
---     padding rows; a category left with nothing loses its header; the unlearned divider goes when no
---     unlearned category is left. Only what this filter emptied is removed, never anything Blizzard kept.
---   * The removed nodes are remembered for the list on screen and put back first on every pass (the same node
---     objects, so children and collapse state survive). So new prices, the AH / vendor basis, an override
---     and turning the filter off all work on the list that is on screen.
---   * We never call Blizzard's page or list Init (see "Sort by profit").
-
--- Only the list on screen is remembered: Blizzard builds a new provider for every rebuild and drops the old
--- one, so state for an older provider is simply forgotten (a weak table would not free it: the nodes point
--- back at their provider).
-local hiddenFor, hiddenList -- data provider, { { parent, node, index }, ... }
-
--- Puts every node the filter took out of `dataProvider` back. Returns the nodes that were hidden (a set) or nil.
-local function RestoreHidden(dataProvider)
-	local hidden = hiddenFor == dataProvider and hiddenList or nil
-	hiddenFor, hiddenList = nil, nil
-	if not hidden then return nil end
-	local was, parents = {}, {}
-	for i = #hidden, 1, -1 do -- reverse order: a header goes back before the rows that were taken out of it
-		local h = hidden[i]
-		local nodes = h.parent:GetNodes()
-		table.insert(nodes, math.min(h.index, #nodes + 1), h.node)
-		parents[h.parent] = true
-		was[h.node] = true
-	end
-	-- The parent's own comparator (Blizzard's, or ours while sorting by profit) puts them back in place.
-	for parent in pairs(parents) do
-		if parent.sortComparator then table.sort(parent:GetNodes(), parent.sortComparator) end
-	end
-	return was
-end
-
-local function FilteredOut(data)
-	local net = UI:GetNet(data.recipeInfo.recipeID)
-	return net == nil or net <= 0
-end
-
-local function Hide(parent, child, hidden)
-	for index, n in ipairs(parent:GetNodes()) do
-		if n == child then
-			parent:Remove(child, true) -- TreeNodeMixin:Remove(node, skipInvalidation)
-			hidden[#hidden + 1] = { parent = parent, node = child, index = index }
-			return
-		end
-	end
-end
-
--- Hides the losing recipes under `node` (the root or a category), depth first. Returns whether the node still
--- shows a recipe, and whether this filter removed anything below it.
-local function FilterNode(node, hidden)
-	local drop, paddings = {}, {}
-	local hasRecipe, hasCategory, removed = false, false, false
-	for _, child in ipairs(node:GetNodes() or {}) do
-		local d = NodeData(child)
-		if d and d.categoryInfo then
-			local shows, sub = FilterNode(child, hidden)
-			removed = removed or sub
-			if shows or not sub then hasCategory = true else drop[#drop + 1] = child end
-		elseif d and d.recipeInfo and d.recipeInfo.recipeID then
-			if FilteredOut(d) then drop[#drop + 1] = child else hasRecipe = true end
-		elseif d and (d.topPadding or d.bottomPadding) then
-			paddings[#paddings + 1] = child
-		end
-	end
-	if #drop > 0 then removed = true end
-	if removed and not hasRecipe then
-		for _, p in ipairs(paddings) do drop[#drop + 1] = p end
-	end
-	for _, child in ipairs(drop) do Hide(node, child, hidden) end
-	return hasRecipe or hasCategory, removed
-end
-
--- Applies (or removes) the filter on a recipe list data provider. Returns true when the visible rows changed.
-function UI:ApplyFilter(dataProvider)
-	if not dataProvider then return false end
-	local want = CP.settings.profitableOnly and true or false
-	if not want and hiddenFor ~= dataProvider then return false end
-	if type(dataProvider.GetRootNode) ~= "function" then return false end
-	local changed = false
-	local ok, err = pcall(function()
-		local was = RestoreHidden(dataProvider)
-		local hidden = {}
-		if want then
-			hiddenFor, hiddenList = dataProvider, hidden -- recorded as we go, so an error cannot lose rows
-			local root = dataProvider:GetRootNode()
-			local _, removed = FilterNode(root, hidden)
-			-- the unlearned divider only makes sense above an unlearned category
-			if removed then
-				local divider, unlearned
-				for _, child in ipairs(root:GetNodes() or {}) do
-					local d = NodeData(child)
-					if d and d.isDivider then divider = child end
-					if d and d.categoryInfo and d.categoryInfo.unlearned then unlearned = true end
-				end
-				if divider and not unlearned then Hide(root, divider, hidden) end
-			end
-		end
-		if #hidden == 0 then hiddenFor, hiddenList = nil, nil end
-		-- changed unless exactly the same rows were hidden again
-		local same = (was ~= nil) == (#hidden > 0)
-		if same and was then
-			local n = 0
-			for _ in pairs(was) do n = n + 1 end
-			same = n == #hidden
-			for _, h in ipairs(hidden) do
-				if not was[h.node] then same = false break end
-			end
-		end
-		changed = not same
-	end)
-	if not ok then CP:Debug("filter failed: %s", tostring(err)) end
-	if changed and type(dataProvider.Invalidate) == "function" then
-		local ok2, err2 = pcall(dataProvider.Invalidate, dataProvider)
-		if not ok2 then CP:Debug("filter refresh failed: %s", tostring(err2)) end
-	end
-	return changed
-end
-
--- Re-filters the list that is on screen (no rebuild).
-function UI:RefilterList()
-	local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
-	local list = page and page.RecipeList
-	local scrollBox = list and list.ScrollBox
-	if not scrollBox or type(scrollBox.GetDataProvider) ~= "function" then return false end
-	local dataProvider = scrollBox:GetDataProvider()
-	if not self:ApplyFilter(dataProvider) then return false end
-	-- rows that came back may carry the other comparator if the sort was toggled while they were hidden
-	self:ApplySort(dataProvider)
-	if list.NoResultsText and type(dataProvider.IsEmpty) == "function" then
-		list.NoResultsText:SetShown(dataProvider:IsEmpty())
-	end
-	return true
-end
-
 function UI:SetProfitableOnly(enabled)
 	CP.settings.profitableOnly = enabled and true or false
 	CP.touched.profitableOnly = true -- keep the choice if a late-loaded database is adopted
-	self:RefilterList()
+	self:RefreshProfitList()
 	CP:Fire("FILTER_CHANGED", CP.settings.profitableOnly)
 end
 
@@ -1489,13 +1284,9 @@ function UI:RefreshAll()
 				if node then UI:UpdateRow(frame, node) end
 			end
 		end)
-		-- prices changed: re-filter (hidden rows come back when they no longer lose), then re-sort
-		if type(list.ScrollBox.GetDataProvider) == "function" then
-			if not self:RefilterList() and CP.settings.sortByProfit then
-				self:ApplySort(list.ScrollBox:GetDataProvider())
-			end
-		end
 	end
+	-- prices changed: our own list is rebuilt from Blizzard's (read only)
+	self:RefreshProfitList()
 
 	local form = page.SchematicForm
 	if form and form.cpPanel then
@@ -1542,9 +1333,9 @@ function UI:Setup()
 
 	hooksecurefunc(page.SchematicForm, "Init", OnFormInit)
 
+	-- Blizzard set a new list: copy it into ours (read only; see "Sort by profit / Profitable only")
 	hooksecurefunc(page.RecipeList.ScrollBox, "SetDataProvider", function(_, dataProvider)
-		UI:ApplyFilter(dataProvider)
-		UI:ApplySort(dataProvider)
+		UI:RefreshProfitList(dataProvider)
 	end)
 
 	if Menu and type(Menu.ModifyMenu) == "function" then

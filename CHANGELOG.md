@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.13
+
+- Fixed: "CraftProfit has been blocked" when using an item from your bags (food, for example). It happened
+  with **Sort by profit** or **Profitable only** turned on, after the bank had been opened next to the
+  profession window, and lasted until a `/reload`. Thanks to Invisible619 and forkus for the reports and logs.
+- Changed: with either option on, CraftProfit now shows its own copy of the recipe list in the same place,
+  sorted or filtered, and leaves the game's own list untouched (changing that list is what caused the
+  error). It looks and works like the normal list: search, filters, profit tags, collapsing categories,
+  Shift-click to link a recipe, right-click to set a favourite. With both options off nothing changes.
+- Changed: with **Profitable only** on, the recipe shown when the window opens is one from the list (the game
+  picks its own first recipe, which could be a hidden one).
+- Known limit: the sorted / filtered list cannot be navigated with a controller yet.
+- New: `/cf blocked taint` and `/cf blocked watch` show which values of the game's windows the game counts as
+  written by an addon (for bug reports).
+
 ## 0.5.12
 
 This version does not fix the "CraftProfit has been blocked" error some players get when using an item from
