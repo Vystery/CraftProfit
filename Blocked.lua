@@ -85,6 +85,7 @@ function Blocked:Record(kind, addon, fn)
 	local stack = self:Stack() -- first: nothing below may add frames
 	local rec = self:Context()
 	rec.stack = stack
+	rec.taint = self:TaintSummary()
 	rec.t, rec.kind, rec.fn = time(), kind, Plain(fn) or "?"
 	rec.version = CP.version
 	rec.build = Plain(Try(function() return (select(4, GetBuildInfo())) end))
@@ -95,7 +96,15 @@ function Blocked:Record(kind, addon, fn)
 	local now = GetTime and GetTime() or rec.t
 	if not self.noticeAt or now - self.noticeAt >= self.noticeGap then
 		self.noticeAt = now
-		CP:Print("the game blocked %s and named CraftProfit. Please type |cffffffff/cf blocked|r and send what it prints to the author; it shows what was on screen when it happened.", rec.fn)
+		-- the record goes to the author by itself when that is on and possible; the player is told either way
+		local queued = CP.Net and CP.Net:QueueReport(rec)
+		if queued then
+			CP:Print("the game blocked %s and named CraftProfit. A report (what |cffffffff/cf blocked|r shows, nothing else) goes to the author when they are online, also through other players who run CraftProfit. |cffffffff/cf report|r turns that off.", rec.fn)
+		else
+			CP:Print("the game blocked %s and named CraftProfit. Please type |cffffffff/cf blocked|r and send what it prints to the author; it shows what was on screen when it happened.", rec.fn)
+		end
+	elseif CP.Net then
+		CP.Net:QueueReport(rec)
 	end
 end
 
@@ -121,6 +130,9 @@ function Blocked:Text()
 		out[#out + 1] = self:Line(list[i])
 		if type(list[i].stack) == "string" then
 			for line in list[i].stack:gmatch("[^\n]+") do out[#out + 1] = "    " .. line end
+		end
+		if type(list[i].taint) == "string" then
+			for line in list[i].taint:gmatch("[^\n]+") do out[#out + 1] = "    " .. line end
 		end
 	end
 	return table.concat(out, "\n")
@@ -311,6 +323,27 @@ function Blocked:Watch()
 			self:Context().open or "nothing", table.concat(fresh, "\n"))
 	end)
 	CP:Print("taint watch on: new addon-written fields are reported here as they appear. /cf blocked watch turns it off.")
+end
+
+-- For a record: which fields that are not CraftProfit's own the game counts as addon-written at that moment
+-- (the cause of a block is among them), in a few lines. nil when the client cannot say or there are none.
+local SUMMARY_LINES, SUMMARY_CHARS = 20, 1200
+
+function Blocked:TaintSummary()
+	local ok, text = pcall(self.TaintReport, self)
+	if not ok or type(text) ~= "string" then return nil end
+	local lines, more = {}, 0
+	for line in text:gmatch("[^\n]+") do
+		-- cpPanel and other cp* / cs* fields are our own (and the companion addon's) widgets
+		if line:find("  <- ", 1, true) and not line:find("%.c[ps]%u") then
+			if #lines < SUMMARY_LINES then lines[#lines + 1] = line else more = more + 1 end
+		end
+	end
+	if #lines == 0 then return nil end
+	local out = "addon-written fields: " .. table.concat(lines, "\n")
+	if more > 0 then out = out .. string.format("\n(and %d more)", more) end
+	if #out > SUMMARY_CHARS then out = out:sub(1, SUMMARY_CHARS) .. "..." end
+	return out
 end
 
 function Blocked:Command(rest)

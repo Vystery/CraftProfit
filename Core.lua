@@ -33,6 +33,8 @@ CP.defaults = {
 	tsmCost = "min(DBMarket, VendorBuy)",
 	tsmSoldPerDay = "DBRegionSoldPerDay",
 	tooltip = true,               -- CraftProfit block (auction price, scan status) in item tooltips
+	versionNotice = true,         -- one chat line when another player's copy is a newer release (Net.lua)
+	sendReports = true,           -- whisper blocked-action records to the author's characters (Net.lua)
 	debug = false,
 }
 
@@ -527,7 +529,8 @@ function CP:PackDB(db)
 	local now = time()
 	local keep = self.touchedItems
 	local out = { packed = PACK_VERSION, packedAt = now, version = db.version, settings = db.settings, realms = {}, learned = {},
-		shareImported = db.shareImported, shopping = db.shopping, shoppingMail = db.shoppingMail, blocked = db.blocked }
+		shareImported = db.shareImported, shopping = db.shopping, shoppingMail = db.shoppingMail, blocked = db.blocked,
+		relay = db.relay, reports = db.reports, reportIds = db.reportIds }
 	local v = {}
 	for id, price in pairs(db.vendor or {}) do v[#v + 1] = Enc(id) .. "." .. Enc(price) end
 	out.vendor = Chunks(v)
@@ -610,7 +613,8 @@ function CP:UnpackDB(p)
 	if not self:IsPacked(p) then return p end
 	local base = p.packedAt or time()
 	local db = { version = p.version, settings = p.settings or {}, vendor = {}, learned = {}, recipeCache = {}, realms = {},
-		shareImported = p.shareImported, shopping = p.shopping, shoppingMail = p.shoppingMail, blocked = p.blocked }
+		shareImported = p.shareImported, shopping = p.shopping, shoppingMail = p.shoppingMail, blocked = p.blocked,
+		relay = p.relay, reports = p.reports, reportIds = p.reportIds }
 	Each(p.vendor, function(e)
 		local id, price = e:match("^(%w+)%.(%w+)$")
 		if id then db.vendor[Dec(id)] = Dec(price) end
@@ -807,6 +811,10 @@ local function AdoptCraftProfitDB(loaded, provisional, reason)
 	if provisional.blocked and provisional.blocked ~= loaded.blocked then
 		loaded.blocked = M.Append(loaded.blocked or {}, provisional.blocked, 20)
 	end
+	-- reports waiting to go to the author, and (on the author's characters) the ones received (Net.lua)
+	loaded.relay = loaded.relay or provisional.relay
+	loaded.reports = loaded.reports or provisional.reports
+	loaded.reportIds = loaded.reportIds or provisional.reportIds
 	loaded.shoppingMail = loaded.shoppingMail or {}
 	for char, items in pairs(provisional.shoppingMail or {}) do
 		loaded.shoppingMail[char] = loaded.shoppingMail[char] or {}
@@ -1027,6 +1035,7 @@ local function PrintHelp()
 	CP:Print("  /cf shop [clear] - show (or empty) the AH shopping list; add recipes with Shop in the profit panel")
 	CP:Print("  /cf share [import] - state of the old cross-character cache (import: merge what it still holds again)")
 	CP:Print("  /cf blocked [clear] - what was on screen when the game blocked an action and named CraftProfit")
+	CP:Print("  /cf report - toggle making, carrying and passing on reports of those blocks to the author")
 	CP:Print("  /cf debug - toggle debug output")
 	CP:Print("  /cf reset confirm - wipe scan data and settings")
 end
@@ -1148,6 +1157,10 @@ local function HandleSlash(input)
 		CP:Print("item tooltip block %s", CP.settings.tooltip and "on" or "off")
 	elseif cmd == "blocked" and CP.Blocked then
 		CP.Blocked:Command(rest)
+	elseif cmd == "report" and CP.Net then
+		CP.Net:ReportCommand(rest)
+	elseif cmd == "reports" and CP.Net then
+		CP.Net:ReportsCommand(rest)
 	elseif cmd == "debug" then
 		CP:SetSetting("debug", not CP.settings.debug)
 		CP:Print("debug %s", CP.settings.debug and "on" or "off")

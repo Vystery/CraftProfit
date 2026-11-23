@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.14
+
+- New: CraftProfit tells you when a newer version is out. It hears it from guild and group members who
+  already updated (addons cannot reach the internet), one chat line per session. Options: "Tell me when a
+  newer version is out".
+- New: when the game blocks an action and names CraftProfit, a report is made for the author: what
+  `/cf blocked` shows (time, function, CraftProfit version, what was on screen, the call stack, and which
+  values of the game's windows count as addon-written). It is kept in CraftProfit's saved data and handed
+  to the author's character in game when it is online. Other players' copies of CraftProfit carry it too
+  (guild and group members), so it can arrive through whoever meets the author first; once it has arrived
+  it is deleted everywhere it is offered. Nothing else is stored or sent. A chat line tells you when a
+  report is made, and `/cf report` or the option "Send error reports to the author" turns all of it off:
+  making, carrying and passing on.
+
 ## 0.5.13
 
 - Fixed: "CraftProfit has been blocked" when using an item from your bags (food, for example). It happened

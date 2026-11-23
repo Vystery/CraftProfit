@@ -95,6 +95,7 @@ The older `/cp` still works for every command.
 /cf tooltip          toggle the tooltip block
 /cf shop [clear]     show (or empty) the AH shopping list
 /cf blocked [clear]  what was on screen when the game blocked an action and named CraftProfit, in a window you can copy from (for bug reports)
+/cf report           toggle error reports to the author: such a record is kept and handed to the author in game, also via other CraftProfit users
 /cf share [import]   state of the old cross-character cache (import: merge it again)
 /cf reset confirm    wipe all scan data and settings
 ```

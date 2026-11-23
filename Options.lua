@@ -126,6 +126,12 @@ function Options:Setup()
 		local tooltip = Proxy(category, "tooltip", Settings.VarType.Boolean, "Price block in item tooltips", CP.defaults.tooltip)
 		Settings.CreateCheckbox(category, tooltip, "Add the auction price, its source and the scan age (or why there is no price) to every item tooltip.")
 
+		local notice = Proxy(category, "versionNotice", Settings.VarType.Boolean, "Tell me when a newer version is out", CP.defaults.versionNotice)
+		Settings.CreateCheckbox(category, notice, "One chat line per session when a guild or group member runs a newer CraftProfit release.")
+
+		local reports = Proxy(category, "sendReports", Settings.VarType.Boolean, "Send error reports to the author", CP.defaults.sendReports)
+		Settings.CreateCheckbox(category, reports, "When the game blocks an action and names CraftProfit, the record (what /cf blocked shows: time, function, version, what was on screen, the call stack) is kept and handed to the author in game when they are online. Copies of CraftProfit also carry each other's reports to the author. Nothing else is stored or sent. Off: no reports are made, carried or passed on.")
+
 		local debug = Proxy(category, "debug", Settings.VarType.Boolean, "Debug output", CP.defaults.debug)
 		Settings.CreateCheckbox(category, debug, "Print diagnostic messages to chat.")
 
