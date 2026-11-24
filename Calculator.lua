@@ -28,6 +28,8 @@ end
 
 CP:On("PRICES_UPDATED", function() Calc:Invalidate() end)
 CP:On("VENDOR_UPDATED", function() Calc:Invalidate() end)
+-- a single-item search (the player's own, a Shopping row, the depth scan) rewrites that item's price
+CP:On("LADDER_UPDATED", function() Calc:Invalidate() end)
 CP:On("SETTINGS_CHANGED", function() Calc:Invalidate() end)
 
 ---------------------------------------------------------------------------
